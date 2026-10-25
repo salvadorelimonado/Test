@@ -6,4 +6,6 @@ namespace DataAccessLayer.Repositories;
 public interface IEnrollmentRepository : IGenericRepository<Enrollment>
 {
     Task<List<Enrollment>> GetByUserAsync(long userId, CancellationToken ct = default);
+
+    Task<int> SumActiveSeatsAsync(long classId, CancellationToken ct = default);
 }
