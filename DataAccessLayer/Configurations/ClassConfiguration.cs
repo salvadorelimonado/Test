@@ -17,8 +17,6 @@ public class ClassConfiguration : IEntityTypeConfiguration<Class>
             .WithMany()
             .HasForeignKey(x => x.RoomId);
 
-        builder.HasQueryFilter(x => !x.IsCancelled);
-
         builder.HasIndex(x => new { x.StartsAt, x.Id })
             .HasFilter("is_cancelled = false");
     }
