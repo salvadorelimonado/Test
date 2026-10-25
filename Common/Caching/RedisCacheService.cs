@@ -5,8 +5,6 @@ namespace Common.Caching;
 
 public class RedisCacheService : ICacheService
 {
-    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
-
     private readonly IConnectionMultiplexer _connection;
     private readonly TimeSpan _defaultTtl;
 
@@ -25,12 +23,13 @@ public class RedisCacheService : ICacheService
             return default;
         }
 
-        return JsonSerializer.Deserialize<T>(value!, SerializerOptions);
+        var json = value.ToString();
+        return JsonSerializer.Deserialize<T>(json, JsonSerializerOptions.Web);
     }
 
     public async Task SetAsync<T>(string key, T value, TimeSpan? ttl = null, CancellationToken ct = default)
     {
-        var payload = JsonSerializer.Serialize(value, SerializerOptions);
+        var payload = JsonSerializer.Serialize(value, JsonSerializerOptions.Web);
 
         await _connection.GetDatabase().StringSetAsync(key, payload, ttl ?? _defaultTtl);
     }
