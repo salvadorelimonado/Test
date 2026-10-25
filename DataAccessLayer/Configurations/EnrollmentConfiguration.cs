@@ -10,7 +10,11 @@ public class EnrollmentConfiguration : IEntityTypeConfiguration<Enrollment>
     {
         builder.HasKey(x => x.Id);
 
-        builder.Property(x => x.Status).IsRequired();
+        builder.Property(x => x.Status)
+            .HasConversion(
+                status => EnrollmentStatusMapping.ToContract(status),
+                value => EnrollmentStatusMapping.FromContract(value))
+            .IsRequired();
 
         builder
             .HasOne<User>()

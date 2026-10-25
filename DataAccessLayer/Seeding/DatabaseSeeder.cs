@@ -165,7 +165,7 @@ public static class DatabaseSeeder
                 UserId = user.Id,
                 ClassId = scheduledClass.Id,
                 Seats = seats,
-                Status = cancelled ? "cancelled" : "active",
+                Status = cancelled ? EnrollmentStatus.Cancelled : EnrollmentStatus.Active,
                 CreatedAt = createdAt,
                 CancelledAt = cancelled
                     ? CancelledBetween(createdAt, scheduledClass.StartsAt, random)
@@ -207,7 +207,7 @@ public static class DatabaseSeeder
                     UserId = donor.UserId,
                     ClassId = scheduledClass.Id,
                     Seats = seats,
-                    Status = "active",
+                    Status = EnrollmentStatus.Active,
                     CreatedAt = CreatedBefore(scheduledClass.StartsAt, now, random),
                     CancelledAt = null
                 });
@@ -244,7 +244,7 @@ public static class DatabaseSeeder
                     UserId = donor.UserId,
                     ClassId = scheduledClass.Id,
                     Seats = 1,
-                    Status = "active",
+                    Status = EnrollmentStatus.Active,
                     CreatedAt = CreatedBefore(scheduledClass.StartsAt, now, random),
                     CancelledAt = null
                 });

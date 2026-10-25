@@ -12,7 +12,7 @@ public class Enrollment : IEntity
 
     public int Seats { get; set; }
 
-    public string Status { get; set; } = null!;
+    public EnrollmentStatus Status { get; set; }
 
     public DateTime CreatedAt { get; set; }
 
