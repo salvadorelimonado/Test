@@ -7,9 +7,14 @@ using DataAccessLayer.UnitOfWork;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using FluentValidation;
 using Microsoft.IdentityModel.Tokens;
+using SharpGrip.FluentValidation.AutoValidation.Mvc.Extensions;
 using StackExchange.Redis;
+using BusinessLayer.Features.Enrollments.Create;
 using WebApi.Auth;
+using WebApi.Features.Enrollments.Create;
+using WebApi.Idempotency;
 using WebApi.Middleware;
 using WebApi.RateLimiting;
 
@@ -22,6 +27,8 @@ builder.Host.UseDefaultServiceProvider(options =>
 });
 
 builder.Services.AddControllers();
+builder.Services.AddValidatorsFromAssemblyContaining<CreateEnrollmentRequestValidator>();
+builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddProblemDetails();
@@ -31,6 +38,10 @@ builder.Services.AddDbContext<ClubDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")));
 
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
+
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddScoped<CreateEnrollmentService>();
+builder.Services.AddScoped<IdempotencyKeyReader>();
 
 EnrollmentRateLimit.Add(builder.Services);
 
