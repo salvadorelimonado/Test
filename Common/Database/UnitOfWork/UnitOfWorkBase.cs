@@ -11,6 +11,8 @@ public interface IUnitOfWorkBase
     IGenericRepository<T> GetRepository<T>() where T : class, IEntity;
 
     Task SaveChangesAsync(CancellationToken ct = default);
+
+    void ClearChangeTracker();
 }
 
 public abstract class UnitOfWorkBase : IUnitOfWorkBase
@@ -56,5 +58,10 @@ public abstract class UnitOfWorkBase : IUnitOfWorkBase
     public virtual async Task SaveChangesAsync(CancellationToken ct = default)
     {
         await DbContext.SaveChangesAsync(ct);
+    }
+
+    public void ClearChangeTracker()
+    {
+        DbContext.ChangeTracker.Clear();
     }
 }
