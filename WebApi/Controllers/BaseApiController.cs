@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 
@@ -7,7 +8,17 @@ public abstract class BaseApiController : ControllerBase
 {
     protected const string AdminRole = "admin";
 
-    protected long CurrentUserId => long.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-
     protected bool IsAdmin => User.IsInRole(AdminRole);
+
+    protected bool TryGetCurrentUserId(out long userId)
+    {
+        var userIdValue = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userIdValue is null || !long.TryParse(userIdValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out userId))
+        {
+            userId = default;
+            return false;
+        }
+
+        return true;
+    }
 }
