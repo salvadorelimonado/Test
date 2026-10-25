@@ -49,6 +49,6 @@ public class EnrollmentsController : BaseApiController
             IdempotencyKey = idempotencyKey
         };
         var result = await _createEnrollmentService.CreateAsync(command, ct);
-        return CreateEnrollmentToActionResultMapper.From(result);
+        return CreateEnrollmentResultToActionResultMapper.From(result);
     }
 }
