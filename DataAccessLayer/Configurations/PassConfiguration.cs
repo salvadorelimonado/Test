@@ -8,14 +8,7 @@ public class PassConfiguration : IEntityTypeConfiguration<Pass>
 {
     public void Configure(EntityTypeBuilder<Pass> builder)
     {
-        builder.ToTable("passes");
-
         builder.HasKey(x => x.Id);
-
-        builder.Property(x => x.Id).HasColumnName("id");
-        builder.Property(x => x.UserId).HasColumnName("user_id");
-        builder.Property(x => x.RemainingVisits).HasColumnName("remaining_visits");
-        builder.Property(x => x.ValidUntil).HasColumnName("valid_until").HasColumnType("date");
 
         builder
             .HasOne<User>()
