@@ -1,6 +1,5 @@
 using Common.Database.Repositories.Generic;
 using DataAccessLayer.Entities;
-using EFCore.PostgresExtensions.Extensions;
 using Microsoft.EntityFrameworkCore;
 
 namespace DataAccessLayer.Repositories;
@@ -27,8 +26,7 @@ public class EnrollmentRepository : GenericRepository<Enrollment>, IEnrollmentRe
     public async Task<Enrollment?> GetByIdForUpdateAsync(long id, CancellationToken ct = default)
     {
         return await _dbSet
-            .Where(x => x.Id == id)
-            .ForUpdate()
+            .FromSql($"SELECT * FROM enrollments WHERE id = {id} FOR UPDATE")
             .FirstOrDefaultAsync(ct);
     }
 

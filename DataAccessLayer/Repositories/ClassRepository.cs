@@ -1,6 +1,5 @@
 using Common.Database.Repositories.Generic;
 using DataAccessLayer.Entities;
-using EFCore.PostgresExtensions.Extensions;
 using Microsoft.EntityFrameworkCore;
 
 namespace DataAccessLayer.Repositories;
@@ -29,9 +28,8 @@ public class ClassRepository : GenericRepository<Class>, IClassRepository
     public async Task<Class?> GetByIdForUpdateAsync(long id, CancellationToken ct = default)
     {
         return await _dbSet
+            .FromSql($"SELECT * FROM classes WHERE id = {id} FOR UPDATE")
             .IgnoreQueryFilters()
-            .Where(x => x.Id == id)
-            .ForUpdate()
             .FirstOrDefaultAsync(ct);
     }
 

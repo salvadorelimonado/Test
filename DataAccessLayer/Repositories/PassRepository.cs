@@ -1,6 +1,5 @@
 using Common.Database.Repositories.Generic;
 using DataAccessLayer.Entities;
-using EFCore.PostgresExtensions.Extensions;
 using Microsoft.EntityFrameworkCore;
 
 namespace DataAccessLayer.Repositories;
@@ -20,8 +19,7 @@ public class PassRepository : GenericRepository<Pass>, IPassRepository
     public async Task<Pass?> GetByUserForUpdateAsync(long userId, CancellationToken ct = default)
     {
         return await _dbSet
-            .Where(x => x.UserId == userId)
-            .ForUpdate()
+            .FromSql($"SELECT * FROM passes WHERE user_id = {userId} FOR UPDATE")
             .FirstOrDefaultAsync(ct);
     }
 }

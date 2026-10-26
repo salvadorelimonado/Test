@@ -1,5 +1,4 @@
 using DataAccessLayer.Entities;
-using EFCore.PostgresExtensions.Extensions;
 using Microsoft.EntityFrameworkCore;
 
 namespace DataAccessLayer;
@@ -28,7 +27,6 @@ public class ClubDbContext : DbContext
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
         optionsBuilder.UseSnakeCaseNamingConvention();
-        optionsBuilder.UseQueryLocks();
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
