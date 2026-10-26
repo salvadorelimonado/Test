@@ -28,7 +28,19 @@ public static class LeaveWaitlistResultToActionResultMapper
                     throw new ArgumentNullException(nameof(result.Reason));
                 }
 
-                return ApiProblemsHelper.Create(StatusCodes.Status409Conflict, result.Reason);
+                var problem = ApiProblemsHelper.Create(StatusCodes.Status409Conflict, result.Reason);
+                if (result.PromotedEnrollmentId is not long promotedEnrollmentId)
+                {
+                    return problem;
+                }
+
+                if (problem.Value is not ProblemDetails details)
+                {
+                    throw new ArgumentNullException(nameof(problem.Value));
+                }
+
+                details.Extensions["promotedEnrollmentId"] = promotedEnrollmentId;
+                return problem;
             default:
                 throw new ArgumentOutOfRangeException(nameof(result.Outcome), result.Outcome, null);
         }

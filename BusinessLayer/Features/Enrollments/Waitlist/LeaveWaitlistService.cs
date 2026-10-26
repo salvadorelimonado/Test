@@ -55,7 +55,9 @@ public sealed class LeaveWaitlistService
         switch (entry.Status)
         {
             case WaitlistStatus.Promoted:
-                return LeaveWaitlistResult.Conflict(EnrollmentConflictConstants.AlreadyPromoted);
+                return LeaveWaitlistResult.Conflict(
+                    EnrollmentConflictConstants.AlreadyPromoted,
+                    entry.PromotedEnrollmentId);
             case WaitlistStatus.Cancelled:
                 return LeaveWaitlistResult.Succeeded(ToResponse(entry));
             case WaitlistStatus.Waiting:

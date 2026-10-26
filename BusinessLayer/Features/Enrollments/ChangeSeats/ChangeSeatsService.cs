@@ -236,8 +236,7 @@ public sealed class ChangeSeatsService
             }
 
             pass.RemainingVisits -= entry.Seats;
-            entry.Status = WaitlistStatus.Promoted;
-            await _unitOfWork.Enrollment.CreateAsync(
+            var enrollment = await _unitOfWork.Enrollment.CreateAsync(
                 new Enrollment
                 {
                     UserId = entry.UserId,
@@ -247,6 +246,8 @@ public sealed class ChangeSeatsService
                     CreatedAt = now
                 },
                 ct);
+            entry.Status = WaitlistStatus.Promoted;
+            entry.PromotedEnrollment = enrollment;
             remainingSeats -= entry.Seats;
             promotedUserIds.Add(entry.UserId);
         }
