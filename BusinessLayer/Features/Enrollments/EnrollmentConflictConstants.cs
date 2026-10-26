@@ -15,4 +15,8 @@ public static class EnrollmentConflictConstants
     public const string EnrollmentCancelled = "enrollment-cancelled";
 
     public const string IdempotencyMismatch = "idempotency-mismatch";
+
+    public const string SeatsAvailable = "seats-available";
+
+    public const string AlreadyWaiting = "already-waiting";
 }
