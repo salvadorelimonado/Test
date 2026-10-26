@@ -1,15 +1,18 @@
-using System.Globalization;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
+using NodaTime;
+using NodaTime.Text;
 
 namespace WebApi.Features.Schedule;
 
 public sealed class UtcDateTimeModelBinder : IModelBinder
 {
-    private static readonly string[] Formats =
-    [
-        "yyyy-MM-dd",
-        "yyyy-MM-ddTHH:mm:ssK"
-    ];
+    private static readonly OffsetDateTimePattern OffsetDateTime = OffsetDateTimePattern.ExtendedIso;
+    private static readonly LocalDateTimePattern LocalDateTime = LocalDateTimePattern.ExtendedIso;
+    private static readonly OffsetDateTimePattern OffsetMinutes =
+        OffsetDateTimePattern.CreateWithInvariantCulture("uuuu'-'MM'-'dd'T'HH':'mmo<G>");
+    private static readonly LocalDateTimePattern LocalMinutes =
+        LocalDateTimePattern.CreateWithInvariantCulture("uuuu'-'MM'-'dd'T'HH':'mm");
+    private static readonly LocalDatePattern Date = LocalDatePattern.Iso;
 
     public Task BindModelAsync(ModelBindingContext bindingContext)
     {
@@ -38,17 +41,50 @@ public sealed class UtcDateTimeModelBinder : IModelBinder
             return false;
         }
 
-        if (!DateTimeOffset.TryParseExact(
-                text,
-                Formats,
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
-                out var parsed))
+        var offset = OffsetDateTime.Parse(text);
+        if (offset.Success)
         {
-            return false;
+            return TrySet(offset.Value.ToInstant(), out utc);
         }
 
-        utc = DateTime.SpecifyKind(parsed.UtcDateTime, DateTimeKind.Utc);
-        return true;
+        var local = LocalDateTime.Parse(text);
+        if (local.Success)
+        {
+            return TrySet(local.Value.WithOffset(Offset.Zero).ToInstant(), out utc);
+        }
+
+        var offsetMinutes = OffsetMinutes.Parse(text);
+        if (offsetMinutes.Success)
+        {
+            return TrySet(offsetMinutes.Value.ToInstant(), out utc);
+        }
+
+        var localMinutes = LocalMinutes.Parse(text);
+        if (localMinutes.Success)
+        {
+            return TrySet(localMinutes.Value.WithOffset(Offset.Zero).ToInstant(), out utc);
+        }
+
+        var date = Date.Parse(text);
+        if (date.Success)
+        {
+            return TrySet(date.Value.AtMidnight().WithOffset(Offset.Zero).ToInstant(), out utc);
+        }
+
+        return false;
+    }
+
+    private static bool TrySet(Instant instant, out DateTime utc)
+    {
+        try
+        {
+            utc = instant.ToDateTimeUtc();
+            return true;
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            utc = default;
+            return false;
+        }
     }
 }
