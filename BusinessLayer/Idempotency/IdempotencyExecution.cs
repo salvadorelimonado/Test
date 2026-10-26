@@ -14,10 +14,12 @@ namespace BusinessLayer.Idempotency;
 public sealed class IdempotencyExecution
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly TimeProvider _clock;
 
-    public IdempotencyExecution(IUnitOfWork unitOfWork)
+    public IdempotencyExecution(IUnitOfWork unitOfWork, TimeProvider clock)
     {
         _unitOfWork = unitOfWork;
+        _clock = clock;
     }
 
     public async Task<TResult> RunAsync<TResponse, TResult>(
@@ -34,22 +36,22 @@ public sealed class IdempotencyExecution
     {
         var keyHash = Hash(idempotencyKey);
         var requestHash = Hash(canonicalRequest);
-        var strategy = _unitOfWork.DbContext.Database.CreateExecutionStrategy();
 
         try
         {
-            return await strategy.ExecuteAsync(() =>
-                RunInTransactionAsync(
-                    userId,
-                    operation,
-                    keyHash,
-                    requestHash,
-                    success,
-                    mismatch,
-                    work,
-                    cancellationToken));
+            return await RunInTransactionAsync(
+                userId,
+                operation,
+                keyHash,
+                requestHash,
+                success,
+                mismatch,
+                work,
+                cancellationToken);
         }
-        catch (DbUpdateException exception) when (UniqueConstraintViolation.IsRaisedBy(exception))
+        catch (DbUpdateException exception) when (UniqueConstraintViolation.IsRaisedBy(
+            exception,
+            IdempotencyRecord.KeyIndexName))
         {
             _unitOfWork.ClearChangeTracker();
             return await ReplayAsync(userId, operation, keyHash, requestHash, success, mismatch, cancellationToken);
@@ -69,7 +71,6 @@ public sealed class IdempotencyExecution
         where TResult : class
     {
         await using var transaction = await _unitOfWork.DbContext.Database.BeginTransactionAsync(cancellationToken);
-        // решение: один и тот же ключ сериализуется до проверки мест. Иначе повтор не доходит до записи и отвечает 409.
         await LockSameKeyAsync(userId, operation, keyHash, cancellationToken);
         var existing = await _unitOfWork.Idempotency.FindAsync(userId, operation, keyHash, cancellationToken);
         if (existing is not null)
@@ -88,13 +89,15 @@ public sealed class IdempotencyExecution
             return step.Failure;
         }
 
+        var now = _clock.GetUtcNow().UtcDateTime;
         var record = new IdempotencyRecord
         {
             UserId = userId,
             Operation = operation,
             KeyHash = keyHash,
             RequestHash = requestHash,
-            ResponseBody = JsonSerializer.Serialize(step.Response, JsonSerializerOptions.Web)
+            ResponseBody = JsonSerializer.Serialize(step.Response, JsonSerializerOptions.Web),
+            CreatedAt = new DateTime(now.Ticks - now.Ticks % 10, DateTimeKind.Utc)
         };
 
         await _unitOfWork.Idempotency.CreateAsync(record, cancellationToken);

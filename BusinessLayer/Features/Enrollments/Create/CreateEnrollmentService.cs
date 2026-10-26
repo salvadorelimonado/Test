@@ -49,6 +49,7 @@ public sealed class CreateEnrollmentService
         CreateEnrollmentCommand command,
         CancellationToken ct)
     {
+        _unitOfWork.ClearChangeTracker();
         var scheduledClass = await _unitOfWork.Class.GetByIdForUpdateAsync(command.ClassId, ct);
         if (scheduledClass is null)
         {
@@ -90,7 +91,6 @@ public sealed class CreateEnrollmentService
             return Reject(CreateEnrollmentResult.Conflict(EnrollmentConflictConstants.CapacityExceeded));
         }
 
-        // решение: пока очередь не пуста, новая бронь не забирает места, которые копятся для её головы.
         var waitingCount = await _unitOfWork.Waitlist.CountWaitingAsync(command.ClassId, ct);
         if (waitingCount > 0)
         {

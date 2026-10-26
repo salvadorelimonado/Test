@@ -15,8 +15,7 @@ public sealed class LeaveWaitlistService
 
     public async Task<LeaveWaitlistResult> LeaveAsync(LeaveWaitlistCommand command, CancellationToken ct)
     {
-        var strategy = _unitOfWork.DbContext.Database.CreateExecutionStrategy();
-        return await strategy.ExecuteAsync(() => LeaveInTransactionAsync(command, ct));
+        return await LeaveInTransactionAsync(command, ct);
     }
 
     private async Task<LeaveWaitlistResult> LeaveInTransactionAsync(LeaveWaitlistCommand command, CancellationToken ct)

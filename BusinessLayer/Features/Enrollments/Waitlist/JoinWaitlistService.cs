@@ -59,7 +59,6 @@ public sealed class JoinWaitlistService
             return Reject(JoinWaitlistResult.Conflict(EnrollmentConflictConstants.AlreadyWaiting));
         }
 
-        // решение: заявка больше вместимости никогда не продвинется и остановит хвост, поэтому её не ставим.
         if (command.Seats > scheduledClass.Capacity)
         {
             return Reject(JoinWaitlistResult.Conflict(EnrollmentConflictConstants.ExceedsCapacity));
@@ -68,7 +67,6 @@ public sealed class JoinWaitlistService
         var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(command.ClassId, ct);
         var freeSeats = scheduledClass.Capacity - takenSeats;
         var waitingCount = await _unitOfWork.Waitlist.CountWaitingAsync(command.ClassId, ct);
-        // решение: строгий FIFO. Если кто-то уже ждёт, новичка не отправляем записываться мимо очереди.
         if (waitingCount == 0 && freeSeats >= command.Seats)
         {
             return Reject(JoinWaitlistResult.Conflict(EnrollmentConflictConstants.SeatsAvailable));
@@ -81,7 +79,6 @@ public sealed class JoinWaitlistService
         }
 
         var today = DateOnly.FromDateTime(now);
-        // решение: без действующего абонемента заявка не продвинется и навсегда займёт место в очереди.
         if (pass.ValidUntil < today)
         {
             return Reject(JoinWaitlistResult.Conflict(EnrollmentConflictConstants.PassExpired));

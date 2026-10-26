@@ -20,8 +20,7 @@ public sealed class ChangeSeatsService
 
     public async Task<ChangeSeatsResult> ChangeAsync(ChangeSeatsCommand command, CancellationToken ct)
     {
-        var strategy = _unitOfWork.DbContext.Database.CreateExecutionStrategy();
-        var attempt = await strategy.ExecuteAsync(() => ChangeInTransactionAsync(command, ct));
+        var attempt = await ChangeInTransactionAsync(command, ct);
         if (attempt.Result.Outcome == ChangeSeatsOutcome.Succeeded)
         {
             foreach (var userId in attempt.AffectedUserIds.Distinct())
@@ -155,7 +154,6 @@ public sealed class ChangeSeatsService
             return ChangeSeatsResult.Conflict(EnrollmentConflictConstants.CapacityExceeded);
         }
 
-        // решение: пока очередь не пуста, увеличение мест не забирает то, что копится для её головы.
         var waitingCount = await _unitOfWork.Waitlist.CountWaitingAsync(enrollment.ClassId, ct);
         if (waitingCount > 0)
         {
@@ -219,7 +217,6 @@ public sealed class ChangeSeatsService
         var promotedUserIds = new List<long>();
         foreach (var entry in waiting)
         {
-            // решение: строгий FIFO по всем свободным местам. Голове не хватает — останавливаемся, следующих не пропускаем.
             if (entry.Seats > remainingSeats)
             {
                 break;
