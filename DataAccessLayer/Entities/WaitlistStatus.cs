@@ -6,3 +6,11 @@ public enum WaitlistStatus
     Promoted,
     Cancelled
 }
+
+public static class WaitlistStatusMapping
+{
+    public static string ToContract(WaitlistStatus status)
+    {
+        return status.ToString().ToLowerInvariant();
+    }
+}
