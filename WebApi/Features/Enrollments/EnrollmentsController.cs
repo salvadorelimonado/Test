@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using BusinessLayer.Features.Enrollments.ChangeSeats;
 using BusinessLayer.Features.Enrollments.Create;
 using WebApi.Controllers;
+using WebApi.Features.Enrollments.ChangeSeats;
 using WebApi.Features.Enrollments.Create;
 using WebApi.Helpers;
 using WebApi.Idempotency;
@@ -17,13 +19,16 @@ namespace WebApi.Features.Enrollments;
 public class EnrollmentsController : BaseApiController
 {
     private readonly CreateEnrollmentService _createEnrollmentService;
+    private readonly ChangeSeatsService _changeSeatsService;
     private readonly IdempotencyKeyReader _idempotencyKeyReader;
 
     public EnrollmentsController(
         CreateEnrollmentService createEnrollmentService,
+        ChangeSeatsService changeSeatsService,
         IdempotencyKeyReader idempotencyKeyReader)
     {
         _createEnrollmentService = createEnrollmentService;
+        _changeSeatsService = changeSeatsService;
         _idempotencyKeyReader = idempotencyKeyReader;
     }
 
@@ -50,5 +55,23 @@ public class EnrollmentsController : BaseApiController
         };
         var result = await _createEnrollmentService.CreateAsync(command, ct);
         return CreateEnrollmentResultToActionResultMapper.From(result);
+    }
+
+    [HttpPost("{id:long}/seats")]
+    public async Task<IActionResult> ChangeSeats(long id, [FromBody] ChangeSeatsRequest request, CancellationToken ct)
+    {
+        if (!TryGetCurrentUserId(out var userId))
+        {
+            return Unauthorized();
+        }
+
+        var command = new ChangeSeatsCommand
+        {
+            UserId = userId,
+            EnrollmentId = id,
+            Seats = request.Seats
+        };
+        var result = await _changeSeatsService.ChangeAsync(command, ct);
+        return ChangeSeatsResultToActionResultMapper.From(result);
     }
 }
