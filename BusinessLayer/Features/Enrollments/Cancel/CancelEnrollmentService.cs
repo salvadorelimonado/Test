@@ -2,7 +2,6 @@ using BusinessLayer.Features.Enrollments;
 using BusinessLayer.Result;
 using DataAccessLayer.Entities;
 using DataAccessLayer.UnitOfWork;
-using Microsoft.EntityFrameworkCore;
 
 namespace BusinessLayer.Features.Enrollments.Cancel;
 
@@ -23,7 +22,10 @@ public sealed class CancelEnrollmentService
 
     public async Task<OperationResult<CancelEnrollmentResponse>> CancelAsync(CancelEnrollmentCommand command, CancellationToken ct)
     {
-        var attempt = await CancelInTransactionAsync(command, ct);
+        var attempt = await _unitOfWork.ExecuteInTransactionAsync(
+            token => CancelLockedAsync(command, token),
+            result => result.Result is OperationResult<CancelEnrollmentResponse>.Ok,
+            ct);
         if (attempt.Result is OperationResult<CancelEnrollmentResponse>.Ok)
         {
             foreach (var userId in attempt.AffectedUserIds.Distinct())
@@ -33,19 +35,6 @@ public sealed class CancelEnrollmentService
         }
 
         return attempt.Result;
-    }
-
-    private async Task<CancelAttempt> CancelInTransactionAsync(CancelEnrollmentCommand command, CancellationToken ct)
-    {
-        _unitOfWork.ClearChangeTracker();
-        await using var transaction = await _unitOfWork.DbContext.Database.BeginTransactionAsync(ct);
-        var attempt = await CancelLockedAsync(command, ct);
-        if (attempt.Result is OperationResult<CancelEnrollmentResponse>.Ok)
-        {
-            await transaction.CommitAsync(ct);
-        }
-
-        return attempt;
     }
 
     private async Task<CancelAttempt> CancelLockedAsync(CancelEnrollmentCommand command, CancellationToken ct)

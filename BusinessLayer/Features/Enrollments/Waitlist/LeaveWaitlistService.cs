@@ -1,7 +1,6 @@
 using BusinessLayer.Result;
 using DataAccessLayer.Entities;
 using DataAccessLayer.UnitOfWork;
-using Microsoft.EntityFrameworkCore;
 
 namespace BusinessLayer.Features.Enrollments.Waitlist;
 
@@ -14,22 +13,12 @@ public sealed class LeaveWaitlistService
         _unitOfWork = unitOfWork;
     }
 
-    public async Task<LeaveWaitlistModel> LeaveAsync(LeaveWaitlistCommand command, CancellationToken ct)
+    public Task<LeaveWaitlistModel> LeaveAsync(LeaveWaitlistCommand command, CancellationToken ct)
     {
-        return await LeaveInTransactionAsync(command, ct);
-    }
-
-    private async Task<LeaveWaitlistModel> LeaveInTransactionAsync(LeaveWaitlistCommand command, CancellationToken ct)
-    {
-        _unitOfWork.ClearChangeTracker();
-        await using var transaction = await _unitOfWork.DbContext.Database.BeginTransactionAsync(ct);
-        var model = await LeaveLockedAsync(command, ct);
-        if (model.Result is OperationResult<LeaveWaitlistResponse>.Ok)
-        {
-            await transaction.CommitAsync(ct);
-        }
-
-        return model;
+        return _unitOfWork.ExecuteInTransactionAsync(
+            token => LeaveLockedAsync(command, token),
+            model => model.Result is OperationResult<LeaveWaitlistResponse>.Ok,
+            ct);
     }
 
     private async Task<LeaveWaitlistModel> LeaveLockedAsync(LeaveWaitlistCommand command, CancellationToken ct)

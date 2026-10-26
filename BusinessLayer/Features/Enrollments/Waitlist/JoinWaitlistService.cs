@@ -1,8 +1,11 @@
 using System.Globalization;
+using BusinessLayer.Features.Enrollments;
 using BusinessLayer.Idempotency;
 using BusinessLayer.Result;
+using DataAccessLayer.Database;
 using DataAccessLayer.Entities;
 using DataAccessLayer.UnitOfWork;
+using Microsoft.EntityFrameworkCore;
 
 namespace BusinessLayer.Features.Enrollments.Waitlist;
 
@@ -10,25 +13,82 @@ public sealed class JoinWaitlistService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly TimeProvider _clock;
-    private readonly IdempotencyExecution _idempotency;
+    private readonly IdempotencyService _idempotency;
 
-    public JoinWaitlistService(IUnitOfWork unitOfWork, TimeProvider clock, IdempotencyExecution idempotency)
+    public JoinWaitlistService(IUnitOfWork unitOfWork, TimeProvider clock, IdempotencyService idempotency)
     {
         _unitOfWork = unitOfWork;
         _clock = clock;
         _idempotency = idempotency;
     }
 
-    public Task<OperationResult<JoinWaitlistResponse>> JoinAsync(JoinWaitlistCommand command, CancellationToken ct)
+    public async Task<OperationResult<JoinWaitlistResponse>> JoinAsync(JoinWaitlistCommand command, CancellationToken ct)
     {
-        return _idempotency.RunAsync(
+        try
+        {
+            return await _unitOfWork.ExecuteInTransactionAsync(
+                token => JoinInTransactionAsync(command, token),
+                joined => joined is OperationResult<JoinWaitlistResponse>.Ok,
+                ct);
+        }
+        catch (DbUpdateException exception) when (UniqueConstraintViolation.IsRaisedBy(
+            exception,
+            IdempotencyRecord.KeyIndexName))
+        {
+            _unitOfWork.ClearChangeTracker();
+            return await ReplayAsync(command, ct);
+        }
+    }
+
+    private async Task<OperationResult<JoinWaitlistResponse>> JoinInTransactionAsync(
+        JoinWaitlistCommand command,
+        CancellationToken ct)
+    {
+        var stored = await FindAsync(command, ct);
+        if (stored is not null)
+        {
+            return stored;
+        }
+
+        var joined = await JoinCoreAsync(command, ct);
+        if (joined is OperationResult<JoinWaitlistResponse>.Ok ok)
+        {
+            await _idempotency.SaveAsync(
+                command.UserId,
+                IdempotencyOperation.Waitlist,
+                command.IdempotencyKey,
+                CanonicalRequest(command.ClassId, command.Seats),
+                ok.Value,
+                ct);
+        }
+
+        return joined;
+    }
+
+    private Task<OperationResult<JoinWaitlistResponse>?> FindAsync(
+        JoinWaitlistCommand command,
+        CancellationToken ct)
+    {
+        return _idempotency.FindAsync<JoinWaitlistResponse>(
             command.UserId,
             IdempotencyOperation.Waitlist,
             command.IdempotencyKey,
             CanonicalRequest(command.ClassId, command.Seats),
-            () => new OperationResult<JoinWaitlistResponse>.Conflict(EnrollmentConflictConstants.IdempotencyMismatch),
-            token => JoinCoreAsync(command, token),
+            EnrollmentConflictConstants.IdempotencyMismatch,
             ct);
+    }
+
+    private async Task<OperationResult<JoinWaitlistResponse>> ReplayAsync(
+        JoinWaitlistCommand command,
+        CancellationToken ct)
+    {
+        var stored = await FindAsync(command, ct);
+        if (stored is null)
+        {
+            throw new InvalidOperationException("Idempotency record was not found after a unique constraint violation.");
+        }
+
+        return stored;
     }
 
     private async Task<OperationResult<JoinWaitlistResponse>> JoinCoreAsync(

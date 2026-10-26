@@ -1,6 +1,7 @@
 using Common.Database.UnitOfWork;
 using DataAccessLayer.Entities;
 using DataAccessLayer.Repositories;
+using Microsoft.EntityFrameworkCore;
 
 namespace DataAccessLayer.UnitOfWork;
 
@@ -17,6 +18,11 @@ public interface IUnitOfWork : IUnitOfWorkBase
     IIdempotencyRepository Idempotency { get; }
 
     IWaitlistRepository Waitlist { get; }
+
+    Task<T> ExecuteInTransactionAsync<T>(
+        Func<CancellationToken, Task<T>> work,
+        Func<T, bool> shouldCommit,
+        CancellationToken ct);
 }
 
 public class UnitOfWork : UnitOfWorkBase, IUnitOfWork
@@ -40,4 +46,20 @@ public class UnitOfWork : UnitOfWorkBase, IUnitOfWork
 
     public IWaitlistRepository Waitlist =>
         GetRepository<WaitlistEntry, IWaitlistRepository>(set => new WaitlistRepository(set));
+
+    public async Task<T> ExecuteInTransactionAsync<T>(
+        Func<CancellationToken, Task<T>> work,
+        Func<T, bool> shouldCommit,
+        CancellationToken ct)
+    {
+        ClearChangeTracker();
+        await using var transaction = await DbContext.Database.BeginTransactionAsync(ct);
+        var result = await work(ct);
+        if (shouldCommit(result))
+        {
+            await transaction.CommitAsync(ct);
+        }
+
+        return result;
+    }
 }

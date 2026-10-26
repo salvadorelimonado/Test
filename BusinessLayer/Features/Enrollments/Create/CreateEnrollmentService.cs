@@ -2,8 +2,10 @@ using System.Globalization;
 using BusinessLayer.Features.Enrollments;
 using BusinessLayer.Idempotency;
 using BusinessLayer.Result;
+using DataAccessLayer.Database;
 using DataAccessLayer.Entities;
 using DataAccessLayer.UnitOfWork;
+using Microsoft.EntityFrameworkCore;
 
 namespace BusinessLayer.Features.Enrollments.Create;
 
@@ -11,13 +13,13 @@ public sealed class CreateEnrollmentService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly TimeProvider _clock;
-    private readonly IdempotencyExecution _idempotency;
+    private readonly IdempotencyService _idempotency;
     private readonly EnrollmentCardCache _cardCache;
 
     public CreateEnrollmentService(
         IUnitOfWork unitOfWork,
         TimeProvider clock,
-        IdempotencyExecution idempotency,
+        IdempotencyService idempotency,
         EnrollmentCardCache cardCache)
     {
         _unitOfWork = unitOfWork;
@@ -28,14 +30,21 @@ public sealed class CreateEnrollmentService
 
     public async Task<OperationResult<CreateEnrollmentResponse>> CreateAsync(CreateEnrollmentCommand command, CancellationToken ct)
     {
-        var result = await _idempotency.RunAsync(
-            command.UserId,
-            IdempotencyOperation.Enroll,
-            command.IdempotencyKey,
-            CanonicalRequest(command.ClassId, command.Seats),
-            () => new OperationResult<CreateEnrollmentResponse>.Conflict(EnrollmentConflictConstants.IdempotencyMismatch),
-            token => BookAsync(command, token),
-            ct);
+        OperationResult<CreateEnrollmentResponse> result;
+        try
+        {
+            result = await _unitOfWork.ExecuteInTransactionAsync(
+                token => CreateInTransactionAsync(command, token),
+                created => created is OperationResult<CreateEnrollmentResponse>.Ok,
+                ct);
+        }
+        catch (DbUpdateException exception) when (UniqueConstraintViolation.IsRaisedBy(
+            exception,
+            IdempotencyRecord.KeyIndexName))
+        {
+            _unitOfWork.ClearChangeTracker();
+            result = await ReplayAsync(command, ct);
+        }
 
         if (result is OperationResult<CreateEnrollmentResponse>.Ok)
         {
@@ -43,6 +52,57 @@ public sealed class CreateEnrollmentService
         }
 
         return result;
+    }
+
+    private async Task<OperationResult<CreateEnrollmentResponse>> CreateInTransactionAsync(
+        CreateEnrollmentCommand command,
+        CancellationToken ct)
+    {
+        var stored = await FindAsync(command, ct);
+        if (stored is not null)
+        {
+            return stored;
+        }
+
+        var booked = await BookAsync(command, ct);
+        if (booked is OperationResult<CreateEnrollmentResponse>.Ok ok)
+        {
+            await _idempotency.SaveAsync(
+                command.UserId,
+                IdempotencyOperation.Enroll,
+                command.IdempotencyKey,
+                CanonicalRequest(command.ClassId, command.Seats),
+                ok.Value,
+                ct);
+        }
+
+        return booked;
+    }
+
+    private Task<OperationResult<CreateEnrollmentResponse>?> FindAsync(
+        CreateEnrollmentCommand command,
+        CancellationToken ct)
+    {
+        return _idempotency.FindAsync<CreateEnrollmentResponse>(
+            command.UserId,
+            IdempotencyOperation.Enroll,
+            command.IdempotencyKey,
+            CanonicalRequest(command.ClassId, command.Seats),
+            EnrollmentConflictConstants.IdempotencyMismatch,
+            ct);
+    }
+
+    private async Task<OperationResult<CreateEnrollmentResponse>> ReplayAsync(
+        CreateEnrollmentCommand command,
+        CancellationToken ct)
+    {
+        var stored = await FindAsync(command, ct);
+        if (stored is null)
+        {
+            throw new InvalidOperationException("Idempotency record was not found after a unique constraint violation.");
+        }
+
+        return stored;
     }
 
     private async Task<OperationResult<CreateEnrollmentResponse>> BookAsync(

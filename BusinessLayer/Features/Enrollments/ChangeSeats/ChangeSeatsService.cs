@@ -2,7 +2,6 @@ using BusinessLayer.Features.Enrollments;
 using BusinessLayer.Result;
 using DataAccessLayer.Entities;
 using DataAccessLayer.UnitOfWork;
-using Microsoft.EntityFrameworkCore;
 
 namespace BusinessLayer.Features.Enrollments.ChangeSeats;
 
@@ -21,7 +20,10 @@ public sealed class ChangeSeatsService
 
     public async Task<OperationResult<EnrollmentCard>> ChangeAsync(ChangeSeatsCommand command, CancellationToken ct)
     {
-        var attempt = await ChangeInTransactionAsync(command, ct);
+        var attempt = await _unitOfWork.ExecuteInTransactionAsync(
+            token => ChangeLockedAsync(command, token),
+            result => result.Result is OperationResult<EnrollmentCard>.Ok,
+            ct);
         if (attempt.Result is OperationResult<EnrollmentCard>.Ok)
         {
             foreach (var userId in attempt.AffectedUserIds.Distinct())
@@ -31,19 +33,6 @@ public sealed class ChangeSeatsService
         }
 
         return attempt.Result;
-    }
-
-    private async Task<ChangeAttempt> ChangeInTransactionAsync(ChangeSeatsCommand command, CancellationToken ct)
-    {
-        _unitOfWork.ClearChangeTracker();
-        await using var transaction = await _unitOfWork.DbContext.Database.BeginTransactionAsync(ct);
-        var attempt = await ChangeLockedAsync(command, ct);
-        if (attempt.Result is OperationResult<EnrollmentCard>.Ok)
-        {
-            await transaction.CommitAsync(ct);
-        }
-
-        return attempt;
     }
 
     private async Task<ChangeAttempt> ChangeLockedAsync(ChangeSeatsCommand command, CancellationToken ct)
