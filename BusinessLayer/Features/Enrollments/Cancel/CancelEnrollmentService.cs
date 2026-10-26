@@ -21,13 +21,13 @@ public sealed class CancelEnrollmentService
         _cardCache = cardCache;
     }
 
-    public async Task<OperationResult<CancelEnrollmentResponse>> CancelAsync(CancelEnrollmentCommand command, CancellationToken ct)
+    public async Task<OperationResult<CancelledEnrollment>> CancelAsync(CancelEnrollmentCommand command, CancellationToken ct)
     {
         var attempt = await _unitOfWork.ExecuteInTransactionAsync(
             token => CancelLockedAsync(command, token),
-            result => result.Result is OperationResult<CancelEnrollmentResponse>.Ok,
+            result => result.Result is OperationResult<CancelledEnrollment>.Ok,
             ct);
-        if (attempt.Result is OperationResult<CancelEnrollmentResponse>.Ok)
+        if (attempt.Result is OperationResult<CancelledEnrollment>.Ok)
         {
             foreach (var userId in attempt.AffectedUserIds.Distinct())
             {
@@ -43,7 +43,7 @@ public sealed class CancelEnrollmentService
         var owner = await _unitOfWork.Enrollment.FindOwnerAsync(command.EnrollmentId, ct);
         if (owner is null || owner.UserId != command.UserId)
         {
-            return CancelAttempt.Stop(new OperationResult<CancelEnrollmentResponse>.NotFound());
+            return CancelAttempt.Stop(new OperationResult<CancelledEnrollment>.NotFound());
         }
 
         var scheduledClass = await _unitOfWork.Class.GetByIdForUpdateAsync(owner.ClassId, ct);
@@ -55,18 +55,18 @@ public sealed class CancelEnrollmentService
         var enrollment = await _unitOfWork.Enrollment.GetByIdForUpdateAsync(command.EnrollmentId, ct);
         if (enrollment is null || enrollment.UserId != command.UserId)
         {
-            return CancelAttempt.Stop(new OperationResult<CancelEnrollmentResponse>.NotFound());
+            return CancelAttempt.Stop(new OperationResult<CancelledEnrollment>.NotFound());
         }
 
         if (enrollment.Status == EnrollmentStatus.Cancelled)
         {
-            return CancelAttempt.Done(new OperationResult<CancelEnrollmentResponse>.Ok(ToResponse(enrollment)), enrollment.UserId);
+            return CancelAttempt.Done(new OperationResult<CancelledEnrollment>.Ok(ToResponse(enrollment)), enrollment.UserId);
         }
 
         var now = _clock.TruncateToMicroseconds();
         if (!scheduledClass.IsCancelled && now >= scheduledClass.StartsAt)
         {
-            return CancelAttempt.Stop(new OperationResult<CancelEnrollmentResponse>.Conflict(EnrollmentConflictConstants.ClassStarted));
+            return CancelAttempt.Stop(new OperationResult<CancelledEnrollment>.Conflict(EnrollmentConflictConstants.ClassStarted));
         }
 
         var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(enrollment.UserId, ct);
@@ -85,7 +85,7 @@ public sealed class CancelEnrollmentService
         await _unitOfWork.SaveChangesAsync(ct);
         var affectedUserIds = new List<long> { enrollment.UserId };
         affectedUserIds.AddRange(promotedUserIds);
-        return CancelAttempt.Done(new OperationResult<CancelEnrollmentResponse>.Ok(ToResponse(enrollment)), affectedUserIds);
+        return CancelAttempt.Done(new OperationResult<CancelledEnrollment>.Ok(ToResponse(enrollment)), affectedUserIds);
     }
 
     private static int Refund(Class scheduledClass, Enrollment enrollment, Pass pass, DateTime now)
@@ -202,30 +202,30 @@ public sealed class CancelEnrollmentService
         return promotedUserIds;
     }
 
-    private static CancelEnrollmentResponse ToResponse(Enrollment enrollment)
+    private static CancelledEnrollment ToResponse(Enrollment enrollment)
     {
-        return new CancelEnrollmentResponse
+        return new CancelledEnrollment
         {
             Id = enrollment.Id,
-            Status = EnrollmentStatusMapping.ToContract(enrollment.Status),
+            Status = enrollment.Status,
             RefundedVisits = enrollment.RefundedVisits
         };
     }
 
-    private sealed record CancelAttempt(OperationResult<CancelEnrollmentResponse> Result, IReadOnlyList<long> AffectedUserIds)
+    private sealed record CancelAttempt(OperationResult<CancelledEnrollment> Result, IReadOnlyList<long> AffectedUserIds)
     {
-        public static CancelAttempt Stop(OperationResult<CancelEnrollmentResponse> result)
+        public static CancelAttempt Stop(OperationResult<CancelledEnrollment> result)
         {
             return new CancelAttempt(result, []);
         }
 
-        public static CancelAttempt Done(OperationResult<CancelEnrollmentResponse> result, long userId)
+        public static CancelAttempt Done(OperationResult<CancelledEnrollment> result, long userId)
         {
             return new CancelAttempt(result, [userId]);
         }
 
         public static CancelAttempt Done(
-            OperationResult<CancelEnrollmentResponse> result,
+            OperationResult<CancelledEnrollment> result,
             IReadOnlyList<long> affectedUserIds)
         {
             return new CancelAttempt(result, affectedUserIds);

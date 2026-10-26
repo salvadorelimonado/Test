@@ -11,15 +11,15 @@ public sealed class GetLoadService
         _unitOfWork = unitOfWork;
     }
 
-    public async Task<LoadReport> GetAsync(GetLoadQuery query, CancellationToken ct)
+    public async Task<LoadListing> GetAsync(GetLoadQuery query, CancellationToken ct)
     {
         var rows = await _unitOfWork.Class.ListLoadAsync(query.From, query.To, query.RoomId, ct);
-        return new LoadReport
+        return new LoadListing
         {
-            Items = rows.Select(row => new LoadReportItem
+            Items = rows.Select(row => new LoadListingItem
             {
                 Date = DateOnly.FromDateTime(row.Day),
-                Room = new LoadReportRoom
+                Room = new LoadListingRoom
                 {
                     Id = row.RoomId,
                     Name = row.RoomName

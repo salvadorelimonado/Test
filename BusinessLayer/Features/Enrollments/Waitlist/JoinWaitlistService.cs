@@ -22,13 +22,13 @@ public sealed class JoinWaitlistService
         _idempotency = idempotency;
     }
 
-    public async Task<OperationResult<JoinWaitlistResponse>> JoinAsync(JoinWaitlistCommand command, CancellationToken ct)
+    public async Task<OperationResult<JoinedWaitlist>> JoinAsync(JoinWaitlistCommand command, CancellationToken ct)
     {
         try
         {
             return await _unitOfWork.ExecuteInTransactionAsync(
                 token => JoinInTransactionAsync(command, token),
-                joined => joined is OperationResult<JoinWaitlistResponse>.Ok,
+                joined => joined is OperationResult<JoinedWaitlist>.Ok,
                 ct);
         }
         catch (DbUpdateException exception) when (UniqueConstraintViolation.IsRaisedBy(
@@ -40,7 +40,7 @@ public sealed class JoinWaitlistService
         }
     }
 
-    private async Task<OperationResult<JoinWaitlistResponse>> JoinInTransactionAsync(
+    private async Task<OperationResult<JoinedWaitlist>> JoinInTransactionAsync(
         JoinWaitlistCommand command,
         CancellationToken ct)
     {
@@ -51,7 +51,7 @@ public sealed class JoinWaitlistService
         }
 
         var joined = await JoinCoreAsync(command, ct);
-        if (joined is OperationResult<JoinWaitlistResponse>.Ok ok)
+        if (joined is OperationResult<JoinedWaitlist>.Ok ok)
         {
             await _idempotency.SaveAsync(
                 command.UserId,
@@ -65,11 +65,11 @@ public sealed class JoinWaitlistService
         return joined;
     }
 
-    private Task<OperationResult<JoinWaitlistResponse>?> FindAsync(
+    private Task<OperationResult<JoinedWaitlist>?> FindAsync(
         JoinWaitlistCommand command,
         CancellationToken ct)
     {
-        return _idempotency.FindAsync<JoinWaitlistResponse>(
+        return _idempotency.FindAsync<JoinedWaitlist>(
             command.UserId,
             IdempotencyOperation.Waitlist,
             command.IdempotencyKey,
@@ -78,7 +78,7 @@ public sealed class JoinWaitlistService
             ct);
     }
 
-    private async Task<OperationResult<JoinWaitlistResponse>> ReplayAsync(
+    private async Task<OperationResult<JoinedWaitlist>> ReplayAsync(
         JoinWaitlistCommand command,
         CancellationToken ct)
     {
@@ -91,7 +91,7 @@ public sealed class JoinWaitlistService
         return stored;
     }
 
-    private async Task<OperationResult<JoinWaitlistResponse>> JoinCoreAsync(
+    private async Task<OperationResult<JoinedWaitlist>> JoinCoreAsync(
         JoinWaitlistCommand command,
         CancellationToken ct)
     {
@@ -99,29 +99,29 @@ public sealed class JoinWaitlistService
         var scheduledClass = await _unitOfWork.Class.GetByIdForUpdateAsync(command.ClassId, ct);
         if (scheduledClass is null)
         {
-            return new OperationResult<JoinWaitlistResponse>.NotFound();
+            return new OperationResult<JoinedWaitlist>.NotFound();
         }
 
         if (scheduledClass.IsCancelled)
         {
-            return new OperationResult<JoinWaitlistResponse>.Conflict(EnrollmentConflictConstants.ClassCancelled);
+            return new OperationResult<JoinedWaitlist>.Conflict(EnrollmentConflictConstants.ClassCancelled);
         }
 
         var now = _clock.TruncateToMicroseconds();
         if (now >= scheduledClass.StartsAt)
         {
-            return new OperationResult<JoinWaitlistResponse>.Conflict(EnrollmentConflictConstants.ClassStarted);
+            return new OperationResult<JoinedWaitlist>.Conflict(EnrollmentConflictConstants.ClassStarted);
         }
 
         var existing = await _unitOfWork.Waitlist.FindWaitingAsync(command.UserId, command.ClassId, ct);
         if (existing is not null)
         {
-            return new OperationResult<JoinWaitlistResponse>.Conflict(EnrollmentConflictConstants.AlreadyWaiting);
+            return new OperationResult<JoinedWaitlist>.Conflict(EnrollmentConflictConstants.AlreadyWaiting);
         }
 
         if (command.Seats > scheduledClass.Capacity)
         {
-            return new OperationResult<JoinWaitlistResponse>.Conflict(EnrollmentConflictConstants.ExceedsCapacity);
+            return new OperationResult<JoinedWaitlist>.Conflict(EnrollmentConflictConstants.ExceedsCapacity);
         }
 
         var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(command.ClassId, ct);
@@ -129,7 +129,7 @@ public sealed class JoinWaitlistService
         var waitingCount = await _unitOfWork.Waitlist.CountWaitingAsync(command.ClassId, ct);
         if (waitingCount == 0 && freeSeats >= command.Seats)
         {
-            return new OperationResult<JoinWaitlistResponse>.Conflict(EnrollmentConflictConstants.SeatsAvailable);
+            return new OperationResult<JoinedWaitlist>.Conflict(EnrollmentConflictConstants.SeatsAvailable);
         }
 
         var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(command.UserId, ct);
@@ -141,12 +141,12 @@ public sealed class JoinWaitlistService
         var today = DateOnly.FromDateTime(now);
         if (pass.ValidUntil < today)
         {
-            return new OperationResult<JoinWaitlistResponse>.Conflict(EnrollmentConflictConstants.PassExpired);
+            return new OperationResult<JoinedWaitlist>.Conflict(EnrollmentConflictConstants.PassExpired);
         }
 
         if (pass.RemainingVisits < command.Seats)
         {
-            return new OperationResult<JoinWaitlistResponse>.Conflict(EnrollmentConflictConstants.PassExhausted);
+            return new OperationResult<JoinedWaitlist>.Conflict(EnrollmentConflictConstants.PassExhausted);
         }
 
         var entry = new WaitlistEntry
@@ -166,7 +166,7 @@ public sealed class JoinWaitlistService
             throw new InvalidOperationException("Waitlist position was not found.");
         }
 
-        return new OperationResult<JoinWaitlistResponse>.Ok(new JoinWaitlistResponse
+        return new OperationResult<JoinedWaitlist>.Ok(new JoinedWaitlist
         {
             Id = entry.Id,
             ClassId = entry.ClassId,

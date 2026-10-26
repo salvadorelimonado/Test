@@ -6,7 +6,7 @@ public sealed class EnrollmentCard
 {
     public required long Id { get; init; }
 
-    public required string Status { get; init; }
+    public required EnrollmentStatus Status { get; init; }
 
     public required int Seats { get; init; }
 
@@ -21,7 +21,7 @@ public sealed class EnrollmentCard
         return new EnrollmentCard
         {
             Id = enrollment.Id,
-            Status = EnrollmentStatusMapping.ToContract(enrollment.Status),
+            Status = enrollment.Status,
             Seats = enrollment.Seats,
             CreatedAt = enrollment.CreatedAt,
             Class = new EnrollmentCardClass

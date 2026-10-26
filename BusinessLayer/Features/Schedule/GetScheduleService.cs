@@ -11,7 +11,7 @@ public sealed class GetScheduleService
         _unitOfWork = unitOfWork;
     }
 
-    public async Task<SchedulePage> GetAsync(GetScheduleQuery query, CancellationToken ct)
+    public async Task<ScheduleListing> GetAsync(GetScheduleQuery query, CancellationToken ct)
     {
         var rows = await _unitOfWork.Class.ListScheduleAsync(
             query.From,
@@ -25,22 +25,22 @@ public sealed class GetScheduleService
 
         var hasMore = rows.Count > query.Limit;
         var visible = hasMore ? rows.Take(query.Limit).ToList() : rows;
-        string? continuationToken = null;
+        ScheduleCursor? next = null;
         if (hasMore)
         {
             var last = visible[visible.Count - 1];
-            continuationToken = ScheduleContinuation.Write(last.StartsAt, last.ClassId);
+            next = new ScheduleCursor(last.StartsAt, last.ClassId);
         }
 
-        return new SchedulePage
+        return new ScheduleListing
         {
-            Items = visible.Select(row => new ScheduleItem
+            Items = visible.Select(row => new ScheduleListItem
             {
                 ClassId = row.ClassId,
                 Title = row.Title,
                 StartsAt = row.StartsAt,
                 DurationMinutes = row.DurationMinutes,
-                Room = new ScheduleRoom
+                Room = new ScheduleListRoom
                 {
                     Id = row.RoomId,
                     Name = row.RoomName
@@ -49,7 +49,7 @@ public sealed class GetScheduleService
                 FreeSeats = Math.Max(0, row.Capacity - row.TakenSeats),
                 MySeats = row.MySeats
             }).ToList(),
-            ContinuationToken = continuationToken
+            Next = next
         };
     }
 }

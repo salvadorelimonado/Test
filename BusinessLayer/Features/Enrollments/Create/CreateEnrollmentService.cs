@@ -29,14 +29,14 @@ public sealed class CreateEnrollmentService
         _cardCache = cardCache;
     }
 
-    public async Task<OperationResult<CreateEnrollmentResponse>> CreateAsync(CreateEnrollmentCommand command, CancellationToken ct)
+    public async Task<OperationResult<CreatedEnrollment>> CreateAsync(CreateEnrollmentCommand command, CancellationToken ct)
     {
-        OperationResult<CreateEnrollmentResponse> result;
+        OperationResult<CreatedEnrollment> result;
         try
         {
             result = await _unitOfWork.ExecuteInTransactionAsync(
                 token => CreateInTransactionAsync(command, token),
-                created => created is OperationResult<CreateEnrollmentResponse>.Ok,
+                created => created is OperationResult<CreatedEnrollment>.Ok,
                 ct);
         }
         catch (DbUpdateException exception) when (UniqueConstraintViolation.IsRaisedBy(
@@ -47,7 +47,7 @@ public sealed class CreateEnrollmentService
             result = await ReplayAsync(command, ct);
         }
 
-        if (result is OperationResult<CreateEnrollmentResponse>.Ok)
+        if (result is OperationResult<CreatedEnrollment>.Ok)
         {
             await _cardCache.InvalidateAsync(command.UserId, ct);
         }
@@ -55,7 +55,7 @@ public sealed class CreateEnrollmentService
         return result;
     }
 
-    private async Task<OperationResult<CreateEnrollmentResponse>> CreateInTransactionAsync(
+    private async Task<OperationResult<CreatedEnrollment>> CreateInTransactionAsync(
         CreateEnrollmentCommand command,
         CancellationToken ct)
     {
@@ -66,7 +66,7 @@ public sealed class CreateEnrollmentService
         }
 
         var booked = await BookAsync(command, ct);
-        if (booked is OperationResult<CreateEnrollmentResponse>.Ok ok)
+        if (booked is OperationResult<CreatedEnrollment>.Ok ok)
         {
             await _idempotency.SaveAsync(
                 command.UserId,
@@ -80,11 +80,11 @@ public sealed class CreateEnrollmentService
         return booked;
     }
 
-    private Task<OperationResult<CreateEnrollmentResponse>?> FindAsync(
+    private Task<OperationResult<CreatedEnrollment>?> FindAsync(
         CreateEnrollmentCommand command,
         CancellationToken ct)
     {
-        return _idempotency.FindAsync<CreateEnrollmentResponse>(
+        return _idempotency.FindAsync<CreatedEnrollment>(
             command.UserId,
             IdempotencyOperation.Enroll,
             command.IdempotencyKey,
@@ -93,7 +93,7 @@ public sealed class CreateEnrollmentService
             ct);
     }
 
-    private async Task<OperationResult<CreateEnrollmentResponse>> ReplayAsync(
+    private async Task<OperationResult<CreatedEnrollment>> ReplayAsync(
         CreateEnrollmentCommand command,
         CancellationToken ct)
     {
@@ -106,7 +106,7 @@ public sealed class CreateEnrollmentService
         return stored;
     }
 
-    private async Task<OperationResult<CreateEnrollmentResponse>> BookAsync(
+    private async Task<OperationResult<CreatedEnrollment>> BookAsync(
         CreateEnrollmentCommand command,
         CancellationToken ct)
     {
@@ -114,18 +114,18 @@ public sealed class CreateEnrollmentService
         var scheduledClass = await _unitOfWork.Class.GetByIdForUpdateAsync(command.ClassId, ct);
         if (scheduledClass is null)
         {
-            return new OperationResult<CreateEnrollmentResponse>.NotFound();
+            return new OperationResult<CreatedEnrollment>.NotFound();
         }
 
         if (scheduledClass.IsCancelled)
         {
-            return new OperationResult<CreateEnrollmentResponse>.Conflict(EnrollmentConflictConstants.ClassCancelled);
+            return new OperationResult<CreatedEnrollment>.Conflict(EnrollmentConflictConstants.ClassCancelled);
         }
 
         var now = _clock.TruncateToMicroseconds();
         if (now >= scheduledClass.StartsAt)
         {
-            return new OperationResult<CreateEnrollmentResponse>.Conflict(EnrollmentConflictConstants.ClassStarted);
+            return new OperationResult<CreatedEnrollment>.Conflict(EnrollmentConflictConstants.ClassStarted);
         }
 
         var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(command.UserId, ct);
@@ -137,25 +137,25 @@ public sealed class CreateEnrollmentService
         var today = DateOnly.FromDateTime(now);
         if (pass.ValidUntil < today)
         {
-            return new OperationResult<CreateEnrollmentResponse>.Conflict(EnrollmentConflictConstants.PassExpired);
+            return new OperationResult<CreatedEnrollment>.Conflict(EnrollmentConflictConstants.PassExpired);
         }
 
         if (pass.RemainingVisits < command.Seats)
         {
-            return new OperationResult<CreateEnrollmentResponse>.Conflict(EnrollmentConflictConstants.PassExhausted);
+            return new OperationResult<CreatedEnrollment>.Conflict(EnrollmentConflictConstants.PassExhausted);
         }
 
         var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(command.ClassId, ct);
         var freeSeats = scheduledClass.Capacity - takenSeats;
         if (freeSeats < command.Seats)
         {
-            return new OperationResult<CreateEnrollmentResponse>.Conflict(EnrollmentConflictConstants.CapacityExceeded);
+            return new OperationResult<CreatedEnrollment>.Conflict(EnrollmentConflictConstants.CapacityExceeded);
         }
 
         var waitingCount = await _unitOfWork.Waitlist.CountWaitingAsync(command.ClassId, ct);
         if (waitingCount > 0)
         {
-            return new OperationResult<CreateEnrollmentResponse>.Conflict(EnrollmentConflictConstants.WaitlistNotEmpty);
+            return new OperationResult<CreatedEnrollment>.Conflict(EnrollmentConflictConstants.WaitlistNotEmpty);
         }
 
         var enrollment = new Enrollment
@@ -171,16 +171,16 @@ public sealed class CreateEnrollmentService
         pass.RemainingVisits -= command.Seats;
         await _unitOfWork.SaveChangesAsync(ct);
 
-        var response = new CreateEnrollmentResponse
+        var response = new CreatedEnrollment
         {
             Id = enrollment.Id,
             ClassId = command.ClassId,
             Seats = command.Seats,
-            Status = EnrollmentStatusMapping.ToContract(EnrollmentStatus.Active),
+            Status = EnrollmentStatus.Active,
             CreatedAt = now
         };
 
-        return new OperationResult<CreateEnrollmentResponse>.Ok(response);
+        return new OperationResult<CreatedEnrollment>.Ok(response);
     }
 
 }

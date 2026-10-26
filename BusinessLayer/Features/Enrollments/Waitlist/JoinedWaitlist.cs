@@ -1,6 +1,6 @@
-namespace BusinessLayer.Features.Enrollments.Create;
+namespace BusinessLayer.Features.Enrollments.Waitlist;
 
-public sealed class CreateEnrollmentResponse
+public sealed class JoinedWaitlist
 {
     public long Id { get; set; }
 
@@ -8,7 +8,7 @@ public sealed class CreateEnrollmentResponse
 
     public int Seats { get; set; }
 
-    public string Status { get; set; } = string.Empty;
+    public int Position { get; set; }
 
     public DateTime CreatedAt { get; set; }
 }

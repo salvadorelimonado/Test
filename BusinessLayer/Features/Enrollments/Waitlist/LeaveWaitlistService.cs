@@ -17,7 +17,7 @@ public sealed class LeaveWaitlistService
     {
         return _unitOfWork.ExecuteInTransactionAsync(
             token => LeaveLockedAsync(command, token),
-            model => model.Result is OperationResult<LeaveWaitlistResponse>.Ok,
+            model => model.Result is OperationResult<LeftWaitlist>.Ok,
             ct);
     }
 
@@ -46,7 +46,7 @@ public sealed class LeaveWaitlistService
             case WaitlistStatus.Promoted:
                 return new LeaveWaitlistModel
                 {
-                    Result = new OperationResult<LeaveWaitlistResponse>.Conflict(
+                    Result = new OperationResult<LeftWaitlist>.Conflict(
                         EnrollmentConflictConstants.AlreadyPromoted),
                     PromotedEnrollmentId = entry.PromotedEnrollmentId
                 };
@@ -61,11 +61,11 @@ public sealed class LeaveWaitlistService
         }
     }
 
-    private static LeaveWaitlistModel Done(LeaveWaitlistResponse response)
+    private static LeaveWaitlistModel Done(LeftWaitlist response)
     {
         return new LeaveWaitlistModel
         {
-            Result = new OperationResult<LeaveWaitlistResponse>.Ok(response)
+            Result = new OperationResult<LeftWaitlist>.Ok(response)
         };
     }
 
@@ -73,16 +73,16 @@ public sealed class LeaveWaitlistService
     {
         return new LeaveWaitlistModel
         {
-            Result = new OperationResult<LeaveWaitlistResponse>.NotFound()
+            Result = new OperationResult<LeftWaitlist>.NotFound()
         };
     }
 
-    private static LeaveWaitlistResponse ToResponse(WaitlistEntry entry)
+    private static LeftWaitlist ToResponse(WaitlistEntry entry)
     {
-        return new LeaveWaitlistResponse
+        return new LeftWaitlist
         {
             Id = entry.Id,
-            Status = WaitlistStatusMapping.ToContract(WaitlistStatus.Cancelled)
+            Status = WaitlistStatus.Cancelled
         };
     }
 }
