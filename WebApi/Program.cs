@@ -12,6 +12,7 @@ using Microsoft.IdentityModel.Tokens;
 using SharpGrip.FluentValidation.AutoValidation.Mvc.Extensions;
 using StackExchange.Redis;
 using BusinessLayer.Features.Enrollments.Create;
+using BusinessLayer.Idempotency;
 using WebApi.Auth;
 using WebApi.Features.Enrollments.Create;
 using WebApi.Idempotency;
@@ -40,6 +41,7 @@ builder.Services.AddDbContext<ClubDbContext>(options =>
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddScoped<IdempotencyExecution>();
 builder.Services.AddScoped<CreateEnrollmentService>();
 builder.Services.AddScoped<IdempotencyKeyReader>();
 
