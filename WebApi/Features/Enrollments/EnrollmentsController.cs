@@ -11,7 +11,6 @@ using WebApi.Features.Enrollments.ChangeSeats;
 using WebApi.Features.Enrollments.Create;
 using WebApi.Features.Enrollments.Waitlist;
 using WebApi.Helpers;
-using WebApi.Idempotency;
 using WebApi.RateLimiting;
 
 namespace WebApi.Features.Enrollments;
@@ -28,7 +27,6 @@ public class EnrollmentsController : BaseApiController
     private readonly GetEnrollmentService _getEnrollmentService;
     private readonly JoinWaitlistService _joinWaitlistService;
     private readonly LeaveWaitlistService _leaveWaitlistService;
-    private readonly IdempotencyKeyReader _idempotencyKeyReader;
 
     public EnrollmentsController(
         CreateEnrollmentService createEnrollmentService,
@@ -36,8 +34,7 @@ public class EnrollmentsController : BaseApiController
         CancelEnrollmentService cancelEnrollmentService,
         GetEnrollmentService getEnrollmentService,
         JoinWaitlistService joinWaitlistService,
-        LeaveWaitlistService leaveWaitlistService,
-        IdempotencyKeyReader idempotencyKeyReader)
+        LeaveWaitlistService leaveWaitlistService)
     {
         _createEnrollmentService = createEnrollmentService;
         _changeSeatsService = changeSeatsService;
@@ -45,14 +42,15 @@ public class EnrollmentsController : BaseApiController
         _getEnrollmentService = getEnrollmentService;
         _joinWaitlistService = joinWaitlistService;
         _leaveWaitlistService = leaveWaitlistService;
-        _idempotencyKeyReader = idempotencyKeyReader;
     }
 
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] CreateEnrollmentRequest request, CancellationToken ct)
+    public async Task<IActionResult> Create(
+        [FromBody] CreateEnrollmentRequest request,
+        [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey,
+        CancellationToken ct)
     {
-        var idempotencyKey = _idempotencyKeyReader.Read(Request);
-        if (idempotencyKey is null)
+        if (string.IsNullOrWhiteSpace(idempotencyKey))
         {
             return ApiProblemsHelper.Create(StatusCodes.Status400BadRequest);
         }
@@ -74,10 +72,12 @@ public class EnrollmentsController : BaseApiController
     }
 
     [HttpPost("waitlist")]
-    public async Task<IActionResult> JoinWaitlist([FromBody] JoinWaitlistRequest request, CancellationToken ct)
+    public async Task<IActionResult> JoinWaitlist(
+        [FromBody] JoinWaitlistRequest request,
+        [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey,
+        CancellationToken ct)
     {
-        var idempotencyKey = _idempotencyKeyReader.Read(Request);
-        if (idempotencyKey is null)
+        if (string.IsNullOrWhiteSpace(idempotencyKey))
         {
             return ApiProblemsHelper.Create(StatusCodes.Status400BadRequest);
         }

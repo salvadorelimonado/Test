@@ -24,7 +24,6 @@ using BusinessLayer.Features.Schedule;
 using BusinessLayer.Idempotency;
 using WebApi.Auth;
 using WebApi.Features.Enrollments.Create;
-using WebApi.Idempotency;
 using WebApi.Middleware;
 using WebApi.RateLimiting;
 
@@ -50,7 +49,7 @@ builder.Services.AddDbContext<ClubDbContext>(options =>
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddScoped<IdempotencyExecution>();
+builder.Services.AddScoped<IdempotencyService>();
 builder.Services.AddScoped<EnrollmentCardCache>();
 builder.Services.AddScoped<CreateEnrollmentService>();
 builder.Services.AddScoped<ChangeSeatsService>();
@@ -60,7 +59,6 @@ builder.Services.AddScoped<JoinWaitlistService>();
 builder.Services.AddScoped<LeaveWaitlistService>();
 builder.Services.AddScoped<GetScheduleService>();
 builder.Services.AddScoped<GetLoadService>();
-builder.Services.AddScoped<IdempotencyKeyReader>();
 
 ApiRateLimit.Add(builder.Services);
 
