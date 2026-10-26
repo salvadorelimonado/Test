@@ -55,6 +55,7 @@ builder.Services.AddScoped<ChangeSeatsService>();
 builder.Services.AddScoped<CancelEnrollmentService>();
 builder.Services.AddScoped<GetEnrollmentService>();
 builder.Services.AddScoped<JoinWaitlistService>();
+builder.Services.AddScoped<LeaveWaitlistService>();
 builder.Services.AddScoped<GetScheduleService>();
 builder.Services.AddScoped<GetLoadService>();
 builder.Services.AddScoped<IdempotencyKeyReader>();
