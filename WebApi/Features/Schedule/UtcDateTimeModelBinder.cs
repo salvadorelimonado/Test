@@ -1,0 +1,47 @@
+using System.Globalization;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
+
+namespace WebApi.Features.Schedule;
+
+public sealed class UtcDateTimeModelBinder : IModelBinder
+{
+    public Task BindModelAsync(ModelBindingContext bindingContext)
+    {
+        var value = bindingContext.ValueProvider.GetValue(bindingContext.ModelName);
+        if (value == ValueProviderResult.None)
+        {
+            return Task.CompletedTask;
+        }
+
+        bindingContext.ModelState.SetModelValue(bindingContext.ModelName, value);
+        if (!TryParseUtc(value.FirstValue, out var utc))
+        {
+            bindingContext.ModelState.TryAddModelError(bindingContext.ModelName, "The value is not a date and time.");
+            return Task.CompletedTask;
+        }
+
+        bindingContext.Result = ModelBindingResult.Success(utc);
+        return Task.CompletedTask;
+    }
+
+    private static bool TryParseUtc(string? text, out DateTime utc)
+    {
+        utc = default;
+        if (string.IsNullOrWhiteSpace(text) || !text.Contains(':'))
+        {
+            return false;
+        }
+
+        if (!DateTime.TryParse(
+                text,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                out var parsed))
+        {
+            return false;
+        }
+
+        utc = DateTime.SpecifyKind(parsed, DateTimeKind.Utc);
+        return true;
+    }
+}
