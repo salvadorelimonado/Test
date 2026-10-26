@@ -1,3 +1,5 @@
+using System.Text.Json;
+using BusinessLayer.Result;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
 
@@ -5,7 +7,7 @@ namespace WebApi.Helpers;
 
 public static class ApiProblemsHelper
 {
-    public static ObjectResult Create(int statusCode, string? reason = null)
+    public static ObjectResult Create(int statusCode, ConflictReason? reason = null)
     {
         var details = new ProblemDetails
         {
@@ -13,9 +15,10 @@ public static class ApiProblemsHelper
             Title = ReasonPhrases.GetReasonPhrase(statusCode)
         };
 
-        if (reason is not null)
+        if (reason is ConflictReason value)
         {
-            details.Extensions["reason"] = reason;
+            details.Extensions["reason"] = JsonSerializer.SerializeToElement(value).GetString()
+                ?? throw new ArgumentNullException(nameof(reason));
         }
 
         return new ObjectResult(details)
