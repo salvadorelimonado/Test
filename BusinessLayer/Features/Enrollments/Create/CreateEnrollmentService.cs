@@ -1,6 +1,6 @@
-﻿using System.Globalization;
-using BusinessLayer.Extensions;
+﻿using BusinessLayer.Extensions;
 using BusinessLayer.Features.Enrollments;
+using BusinessLayer.Features.Enrollments.Waitlist;
 using BusinessLayer.Idempotency;
 using BusinessLayer.Result;
 using DataAccessLayer.Database;
@@ -31,12 +31,12 @@ public sealed class CreateEnrollmentService
 
     public async Task<OperationResult<CreatedEnrollment>> CreateAsync(CreateEnrollmentCommand command, CancellationToken ct)
     {
-        OperationResult<CreatedEnrollment> result;
+        BookingAttempt attempt;
         try
         {
-            result = await _unitOfWork.ExecuteInTransactionAsync(
+            attempt = await _unitOfWork.ExecuteInTransactionAsync(
                 token => CreateInTransactionAsync(command, token),
-                created => created is OperationResult<CreatedEnrollment>.Ok,
+                created => created.Result is OperationResult<CreatedEnrollment>.Ok || created.QueueChanged,
                 ct);
         }
         catch (DbUpdateException exception) when (UniqueConstraintViolation.IsRaisedBy(
@@ -44,29 +44,40 @@ public sealed class CreateEnrollmentService
             IdempotencyRecord.KeyIndexName))
         {
             _unitOfWork.ClearChangeTracker();
-            result = await ReplayAsync(command, ct);
+            var replayed = await ReplayAsync(command, ct);
+            if (replayed is OperationResult<CreatedEnrollment>.Ok)
+            {
+                await _cardCache.InvalidateAsync(command.UserId, ct);
+            }
+
+            return replayed;
         }
 
-        if (result is OperationResult<CreatedEnrollment>.Ok)
+        if (attempt.Result is OperationResult<CreatedEnrollment>.Ok)
         {
             await _cardCache.InvalidateAsync(command.UserId, ct);
         }
 
-        return result;
+        foreach (var userId in attempt.PromotedUserIds.Distinct())
+        {
+            await _cardCache.InvalidateAsync(userId, ct);
+        }
+
+        return attempt.Result;
     }
 
-    private async Task<OperationResult<CreatedEnrollment>> CreateInTransactionAsync(
+    private async Task<BookingAttempt> CreateInTransactionAsync(
         CreateEnrollmentCommand command,
         CancellationToken ct)
     {
         var stored = await FindAsync(command, ct);
         if (stored is not null)
         {
-            return stored;
+            return new BookingAttempt(stored, [], false);
         }
 
         var booked = await BookAsync(command, ct);
-        if (booked is OperationResult<CreatedEnrollment>.Ok ok)
+        if (booked.Result is OperationResult<CreatedEnrollment>.Ok ok)
         {
             await _idempotency.SaveAsync(
                 command.UserId,
@@ -77,7 +88,7 @@ public sealed class CreateEnrollmentService
                 ct);
         }
 
-        return booked;
+        return new BookingAttempt(booked.Result, booked.Promotion.PromotedUserIds, booked.Promotion.Changed);
     }
 
     private Task<OperationResult<CreatedEnrollment>?> FindAsync(
@@ -106,7 +117,7 @@ public sealed class CreateEnrollmentService
         return stored;
     }
 
-    private async Task<OperationResult<CreatedEnrollment>> BookAsync(
+    private async Task<BookedEnrollment> BookAsync(
         CreateEnrollmentCommand command,
         CancellationToken ct)
     {
@@ -114,18 +125,18 @@ public sealed class CreateEnrollmentService
         var scheduledClass = await _unitOfWork.Class.GetByIdForUpdateAsync(command.ClassId, ct);
         if (scheduledClass is null)
         {
-            return new OperationResult<CreatedEnrollment>.NotFound();
+            return BookedEnrollment.Stop(new OperationResult<CreatedEnrollment>.NotFound());
         }
 
         if (scheduledClass.IsCancelled)
         {
-            return new OperationResult<CreatedEnrollment>.Conflict(ConflictReason.ClassCancelled);
+            return BookedEnrollment.Stop(new OperationResult<CreatedEnrollment>.Conflict(ConflictReason.ClassCancelled));
         }
 
         var now = _clock.TruncateToMicroseconds();
         if (now >= scheduledClass.StartsAt)
         {
-            return new OperationResult<CreatedEnrollment>.Conflict(ConflictReason.ClassStarted);
+            return BookedEnrollment.Stop(new OperationResult<CreatedEnrollment>.Conflict(ConflictReason.ClassStarted));
         }
 
         var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(command.UserId, ct);
@@ -137,25 +148,37 @@ public sealed class CreateEnrollmentService
         var today = DateOnly.FromDateTime(now);
         if (pass.ValidUntil < today)
         {
-            return new OperationResult<CreatedEnrollment>.Conflict(ConflictReason.PassExpired);
+            return BookedEnrollment.Stop(new OperationResult<CreatedEnrollment>.Conflict(ConflictReason.PassExpired));
         }
 
         if (pass.RemainingVisits < command.Seats)
         {
-            return new OperationResult<CreatedEnrollment>.Conflict(ConflictReason.PassExhausted);
+            return BookedEnrollment.Stop(new OperationResult<CreatedEnrollment>.Conflict(ConflictReason.PassExhausted));
         }
 
         var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(command.ClassId, ct);
         var freeSeats = scheduledClass.Capacity - takenSeats;
         if (freeSeats < command.Seats)
         {
-            return new OperationResult<CreatedEnrollment>.Conflict(ConflictReason.CapacityExceeded);
+            return BookedEnrollment.Stop(new OperationResult<CreatedEnrollment>.Conflict(ConflictReason.CapacityExceeded));
+        }
+
+        var promotion = await PromoteWaitingAsync(scheduledClass, now, ct);
+        takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(command.ClassId, ct);
+        freeSeats = scheduledClass.Capacity - takenSeats;
+        if (freeSeats < command.Seats)
+        {
+            return new BookedEnrollment(
+                new OperationResult<CreatedEnrollment>.Conflict(ConflictReason.CapacityExceeded),
+                promotion);
         }
 
         var waitingCount = await _unitOfWork.Waitlist.CountWaitingAsync(command.ClassId, ct);
         if (waitingCount > 0)
         {
-            return new OperationResult<CreatedEnrollment>.Conflict(ConflictReason.WaitlistNotEmpty);
+            return new BookedEnrollment(
+                new OperationResult<CreatedEnrollment>.Conflict(ConflictReason.WaitlistNotEmpty),
+                promotion);
         }
 
         var enrollment = new Enrollment
@@ -180,7 +203,61 @@ public sealed class CreateEnrollmentService
             CreatedAt = now
         };
 
-        return new OperationResult<CreatedEnrollment>.Ok(response);
+        return new BookedEnrollment(new OperationResult<CreatedEnrollment>.Ok(response), promotion);
+    }
+
+    private async Task<WaitlistFillResult> PromoteWaitingAsync(Class scheduledClass, DateTime now, CancellationToken ct)
+    {
+        if (scheduledClass.IsCancelled)
+        {
+            return WaitlistFillResult.None;
+        }
+
+        var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(scheduledClass.Id, ct);
+        var freeSeats = scheduledClass.Capacity - takenSeats;
+        if (freeSeats <= 0)
+        {
+            return WaitlistFillResult.None;
+        }
+
+        var waiting = await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct);
+        if (waiting.Count == 0)
+        {
+            return WaitlistFillResult.None;
+        }
+
+        var passes = new Dictionary<long, Pass>();
+        foreach (var userId in WaitlistFillResult.UserIdsWithinFreeSeats(waiting, freeSeats).Distinct().OrderBy(id => id))
+        {
+            var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(userId, ct);
+            if (pass is null)
+            {
+                throw new InvalidOperationException("Pass was not found.");
+            }
+
+            passes.Add(userId, pass);
+        }
+
+        var result = WaitlistFillResult.Fill(scheduledClass, waiting, passes, freeSeats, now);
+        if (result.Changed)
+        {
+            await _unitOfWork.SaveChangesAsync(ct);
+        }
+
+        return result;
+    }
+
+    private sealed record BookingAttempt(
+        OperationResult<CreatedEnrollment> Result,
+        IReadOnlyList<long> PromotedUserIds,
+        bool QueueChanged);
+
+    private sealed record BookedEnrollment(OperationResult<CreatedEnrollment> Result, WaitlistFillResult Promotion)
+    {
+        public static BookedEnrollment Stop(OperationResult<CreatedEnrollment> result)
+        {
+            return new BookedEnrollment(result, WaitlistFillResult.None);
+        }
     }
 
 }

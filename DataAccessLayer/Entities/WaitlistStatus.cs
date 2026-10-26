@@ -8,5 +8,6 @@ public enum WaitlistStatus
 {
     Waiting,
     Promoted,
-    Cancelled
+    Cancelled,
+    Skipped
 }

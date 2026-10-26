@@ -14,21 +14,28 @@ public sealed class JoinWaitlistService
     private readonly IUnitOfWork _unitOfWork;
     private readonly TimeProvider _clock;
     private readonly IdempotencyService _idempotency;
+    private readonly EnrollmentCardCache _cardCache;
 
-    public JoinWaitlistService(IUnitOfWork unitOfWork, TimeProvider clock, IdempotencyService idempotency)
+    public JoinWaitlistService(
+        IUnitOfWork unitOfWork,
+        TimeProvider clock,
+        IdempotencyService idempotency,
+        EnrollmentCardCache cardCache)
     {
         _unitOfWork = unitOfWork;
         _clock = clock;
         _idempotency = idempotency;
+        _cardCache = cardCache;
     }
 
     public async Task<OperationResult<JoinedWaitlist>> JoinAsync(JoinWaitlistCommand command, CancellationToken ct)
     {
+        JoinAttempt attempt;
         try
         {
-            return await _unitOfWork.ExecuteInTransactionAsync(
+            attempt = await _unitOfWork.ExecuteInTransactionAsync(
                 token => JoinInTransactionAsync(command, token),
-                joined => joined is OperationResult<JoinedWaitlist>.Ok,
+                joined => joined.Result is OperationResult<JoinedWaitlist>.Ok || joined.QueueChanged,
                 ct);
         }
         catch (DbUpdateException exception) when (UniqueConstraintViolation.IsRaisedBy(
@@ -38,20 +45,27 @@ public sealed class JoinWaitlistService
             _unitOfWork.ClearChangeTracker();
             return await ReplayAsync(command, ct);
         }
+
+        foreach (var userId in attempt.PromotedUserIds.Distinct())
+        {
+            await _cardCache.InvalidateAsync(userId, ct);
+        }
+
+        return attempt.Result;
     }
 
-    private async Task<OperationResult<JoinedWaitlist>> JoinInTransactionAsync(
+    private async Task<JoinAttempt> JoinInTransactionAsync(
         JoinWaitlistCommand command,
         CancellationToken ct)
     {
         var stored = await FindAsync(command, ct);
         if (stored is not null)
         {
-            return stored;
+            return new JoinAttempt(stored, [], false);
         }
 
         var joined = await JoinCoreAsync(command, ct);
-        if (joined is OperationResult<JoinedWaitlist>.Ok ok)
+        if (joined.Result is OperationResult<JoinedWaitlist>.Ok ok)
         {
             await _idempotency.SaveAsync(
                 command.UserId,
@@ -91,7 +105,7 @@ public sealed class JoinWaitlistService
         return stored;
     }
 
-    private async Task<OperationResult<JoinedWaitlist>> JoinCoreAsync(
+    private async Task<JoinAttempt> JoinCoreAsync(
         JoinWaitlistCommand command,
         CancellationToken ct)
     {
@@ -99,37 +113,41 @@ public sealed class JoinWaitlistService
         var scheduledClass = await _unitOfWork.Class.GetByIdForUpdateAsync(command.ClassId, ct);
         if (scheduledClass is null)
         {
-            return new OperationResult<JoinedWaitlist>.NotFound();
+            return JoinAttempt.Stop(new OperationResult<JoinedWaitlist>.NotFound());
         }
 
         if (scheduledClass.IsCancelled)
         {
-            return new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.ClassCancelled);
+            return JoinAttempt.Stop(new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.ClassCancelled));
         }
 
         var now = _clock.TruncateToMicroseconds();
         if (now >= scheduledClass.StartsAt)
         {
-            return new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.ClassStarted);
+            return JoinAttempt.Stop(new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.ClassStarted));
         }
 
         var existing = await _unitOfWork.Waitlist.FindWaitingAsync(command.UserId, command.ClassId, ct);
         if (existing is not null)
         {
-            return new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.AlreadyWaiting);
+            return JoinAttempt.Stop(new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.AlreadyWaiting));
         }
 
         if (command.Seats > scheduledClass.Capacity)
         {
-            return new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.ExceedsCapacity);
+            return JoinAttempt.Stop(new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.ExceedsCapacity));
         }
 
+        var promotion = await PromoteWaitingAsync(scheduledClass, now, ct);
         var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(command.ClassId, ct);
         var freeSeats = scheduledClass.Capacity - takenSeats;
         var waitingCount = await _unitOfWork.Waitlist.CountWaitingAsync(command.ClassId, ct);
         if (waitingCount == 0 && freeSeats >= command.Seats)
         {
-            return new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.SeatsAvailable);
+            return new JoinAttempt(
+                new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.SeatsAvailable),
+                promotion.PromotedUserIds,
+                promotion.Changed);
         }
 
         var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(command.UserId, ct);
@@ -141,12 +159,18 @@ public sealed class JoinWaitlistService
         var today = DateOnly.FromDateTime(now);
         if (pass.ValidUntil < today)
         {
-            return new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.PassExpired);
+            return new JoinAttempt(
+                new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.PassExpired),
+                promotion.PromotedUserIds,
+                promotion.Changed);
         }
 
         if (pass.RemainingVisits < command.Seats)
         {
-            return new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.PassExhausted);
+            return new JoinAttempt(
+                new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.PassExhausted),
+                promotion.PromotedUserIds,
+                promotion.Changed);
         }
 
         var entry = new WaitlistEntry
@@ -166,13 +190,68 @@ public sealed class JoinWaitlistService
             throw new InvalidOperationException("Waitlist position was not found.");
         }
 
-        return new OperationResult<JoinedWaitlist>.Ok(new JoinedWaitlist
+        return new JoinAttempt(
+            new OperationResult<JoinedWaitlist>.Ok(new JoinedWaitlist
+            {
+                Id = entry.Id,
+                ClassId = entry.ClassId,
+                Seats = entry.Seats,
+                Position = position,
+                CreatedAt = entry.CreatedAt
+            }),
+            promotion.PromotedUserIds,
+            promotion.Changed);
+    }
+
+    private async Task<WaitlistFillResult> PromoteWaitingAsync(Class scheduledClass, DateTime now, CancellationToken ct)
+    {
+        if (scheduledClass.IsCancelled)
         {
-            Id = entry.Id,
-            ClassId = entry.ClassId,
-            Seats = entry.Seats,
-            Position = position,
-            CreatedAt = entry.CreatedAt
-        });
+            return WaitlistFillResult.None;
+        }
+
+        var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(scheduledClass.Id, ct);
+        var freeSeats = scheduledClass.Capacity - takenSeats;
+        if (freeSeats <= 0)
+        {
+            return WaitlistFillResult.None;
+        }
+
+        var waiting = await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct);
+        if (waiting.Count == 0)
+        {
+            return WaitlistFillResult.None;
+        }
+
+        var passes = new Dictionary<long, Pass>();
+        foreach (var userId in WaitlistFillResult.UserIdsWithinFreeSeats(waiting, freeSeats).Distinct().OrderBy(id => id))
+        {
+            var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(userId, ct);
+            if (pass is null)
+            {
+                throw new InvalidOperationException("Pass was not found.");
+            }
+
+            passes.Add(userId, pass);
+        }
+
+        var result = WaitlistFillResult.Fill(scheduledClass, waiting, passes, freeSeats, now);
+        if (result.Changed)
+        {
+            await _unitOfWork.SaveChangesAsync(ct);
+        }
+
+        return result;
+    }
+
+    private sealed record JoinAttempt(
+        OperationResult<JoinedWaitlist> Result,
+        IReadOnlyList<long> PromotedUserIds,
+        bool QueueChanged)
+    {
+        public static JoinAttempt Stop(OperationResult<JoinedWaitlist> result)
+        {
+            return new JoinAttempt(result, [], false);
+        }
     }
 }
