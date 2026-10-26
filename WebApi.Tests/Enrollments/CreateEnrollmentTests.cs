@@ -139,11 +139,19 @@ public class CreateEnrollmentTests : ClubTest
     [TestMethod]
     public async Task Create_WhenClassDoesNotExist_ReturnsNotFound()
     {
+        // Arrange
+        var missingClassId = long.MaxValue;
+        var zeroClassId = 0L;
+        var seats = 1;
+        var user = Host().User(7);
+
         // Act
-        var response = await Host().User(7).Enroll(long.MaxValue, 1);
+        var missing = await user.Enroll(missingClassId, seats);
+        var zero = await user.Enroll(zeroClassId, seats);
 
         // Assert
-        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        missing.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        zero.StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
 
     [TestMethod]
@@ -256,11 +264,18 @@ public class CreateEnrollmentTests : ClubTest
     {
         // Arrange
         var visits = 6;
-        var lesson = await Host().Lesson().Capacity(4).StartsAt(DateTime.UtcNow.AddDays(2)).Pass(14, visits).Create();
-        await Host().AddWaiting(15, lesson.ClassId, 2, DateTime.UtcNow.AddMinutes(-5));
+        var heldSeats = 2;
+        var headSeats = 3;
+        var requestedSeats = 1;
+        var validUntil = ClubTime.Today().AddDays(30);
+        var holder = await Host().RegisterMember(heldSeats, validUntil);
+        var lesson = await Host().Lesson().Capacity(4).StartsAt(DateTime.UtcNow.AddDays(2)).Pass(14, visits, validUntil).Create();
+        await Host().User(holder.Number).Book(lesson, heldSeats);
+        await Host().SetPass(15, visits, validUntil);
+        var headId = await Host().AddWaiting(15, lesson.ClassId, headSeats, DateTime.UtcNow.AddMinutes(-5));
 
         // Act
-        var response = await Host().User(14).Enroll(lesson, 1);
+        var response = await Host().User(14).Enroll(lesson, requestedSeats);
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
@@ -268,6 +283,7 @@ public class CreateEnrollmentTests : ClubTest
         var stored = await Host().ActiveBooking(lesson.ClassId, lesson.UserId);
         stored.Count.ShouldBe(0);
         stored.RemainingVisits.ShouldBe(visits);
+        (await Host().WaitlistStatusOf(headId)).ShouldBe(WaitlistStatus.Waiting);
     }
 
     [TestMethod]
@@ -290,25 +306,126 @@ public class CreateEnrollmentTests : ClubTest
     }
 
     [TestMethod]
-    public async Task Create_WhenClassIdIsZeroOrTheBodyIsUnreadable_ReturnsBadRequest()
+    public async Task Create_WhenTheBodyIsUnreadableOrClassIdIsMissing_ReturnsBadRequest()
     {
         // Arrange
         var member = await Host().RegisterMember(4, ClubTime.Today().AddDays(30));
         var user = Host().User(member.Number);
         var missingKey = Guid.NewGuid().ToString("N");
         var brokenKey = Guid.NewGuid().ToString("N");
-        var zeroKey = Guid.NewGuid().ToString("N");
-        var zeroClass = """{"classId":0,"seats":1}""";
+        var missingClassKey = Guid.NewGuid().ToString("N");
         var brokenJson = "{";
+        var missingClass = """{"seats":1}""";
 
         // Act
         var missingBody = await user.Post("/enrollments", null, missingKey);
         var brokenBody = await user.Post("/enrollments", brokenJson, brokenKey);
-        var zeroClassBody = await user.Post("/enrollments", zeroClass, zeroKey);
+        var missingClassBody = await user.Post("/enrollments", missingClass, missingClassKey);
 
         // Assert
         missingBody.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         brokenBody.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
-        zeroClassBody.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        missingClassBody.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [TestMethod]
+    public async Task Create_WhenTheWaitingHeadCannotPay_SkipsThatRequestAndBooks()
+    {
+        // Arrange
+        var requestedSeats = 1;
+        var bookerVisits = 2;
+        var waiterVisits = 0;
+        var validUntil = ClubTime.Today().AddDays(30);
+        var waiter = await Host().RegisterMember(waiterVisits, validUntil);
+        var booker = await Host().RegisterMember(bookerVisits, validUntil);
+        var lesson = await Host().Lesson().Capacity(1).StartsAt(DateTime.UtcNow.AddDays(3)).Pass(booker.Number, bookerVisits, validUntil).Create();
+        var headId = await Host().AddWaiting(waiter.Number, lesson.ClassId, requestedSeats, DateTime.UtcNow.AddMinutes(-5));
+
+        // Act
+        var response = await booker.Enroll(lesson, requestedSeats);
+
+        // Assert
+        response.StatusCode.ShouldBe(HttpStatusCode.Created);
+        (await Host().WaitlistStatusOf(headId)).ShouldBe(WaitlistStatus.Skipped);
+        (await Host().ActiveSeats(lesson.UserId, lesson.ClassId)).ShouldBe(requestedSeats);
+        (await Host().RemainingVisits(lesson.UserId)).ShouldBe(bookerVisits - requestedSeats);
+        (await Host().ActiveCount(await Host().UserId(waiter.Number), lesson.ClassId)).ShouldBe(0);
+        (await Host().RemainingVisits(await Host().UserId(waiter.Number))).ShouldBe(waiterVisits);
+    }
+
+    [TestMethod]
+    public async Task Create_WhenTheWaitingHeadFits_PromotesThemAndRejectsTheNewcomer()
+    {
+        // Arrange
+        var requestedSeats = 1;
+        var visits = 2;
+        var validUntil = ClubTime.Today().AddDays(30);
+        var waiter = await Host().RegisterMember(visits, validUntil);
+        var booker = await Host().RegisterMember(visits, validUntil);
+        var lesson = await Host().Lesson().Capacity(1).StartsAt(DateTime.UtcNow.AddDays(3)).Pass(booker.Number, visits, validUntil).Create();
+        var headId = await Host().AddWaiting(waiter.Number, lesson.ClassId, requestedSeats, DateTime.UtcNow.AddMinutes(-5));
+
+        // Act
+        var response = await booker.Enroll(lesson, requestedSeats);
+
+        // Assert
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await response.ReadReason()).ShouldBe(ConflictReason.CapacityExceeded);
+        (await Host().WaitlistStatusOf(headId)).ShouldBe(WaitlistStatus.Promoted);
+        var waiterUserId = await Host().UserId(waiter.Number);
+        (await Host().ActiveSeats(waiterUserId, lesson.ClassId)).ShouldBe(requestedSeats);
+        (await Host().RemainingVisits(waiterUserId)).ShouldBe(visits - requestedSeats);
+        (await Host().ActiveCount(lesson.UserId, lesson.ClassId)).ShouldBe(0);
+        (await Host().RemainingVisits(lesson.UserId)).ShouldBe(visits);
+    }
+
+    [TestMethod]
+    public async Task Create_WhenAnExistingBookingUsesTheFrameworkStatus_CountsItsSeats()
+    {
+        // Arrange
+        var takenSeats = 1;
+        var requestedSeats = 1;
+        var visits = 4;
+        var storedStatus = "active";
+        var validUntil = ClubTime.Today().AddDays(30);
+        var holder = await Host().RegisterMember(visits, validUntil);
+        var booker = await Host().RegisterMember(visits, validUntil);
+        var lesson = await Host().Lesson()
+            .Capacity(takenSeats)
+            .StartsAt(DateTime.UtcNow.AddDays(2))
+            .Pass(booker.Number, visits, validUntil)
+            .Create();
+        var holderId = await Host().UserId(holder.Number);
+        await Host().InsertEnrollmentRow(holderId, lesson.ClassId, takenSeats, storedStatus);
+
+        // Act
+        var response = await booker.Enroll(lesson, requestedSeats);
+
+        // Assert
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await response.ReadReason()).ShouldBe(ConflictReason.CapacityExceeded);
+        (await Host().SumActiveSeats(lesson.ClassId)).ShouldBe(takenSeats);
+        (await Host().RemainingVisits(await Host().UserId(booker.Number))).ShouldBe(visits);
+    }
+
+    [TestMethod]
+    public async Task Create_StoresTheEnrollmentStatusInTheFrameworkFormat()
+    {
+        // Arrange
+        var seats = 1;
+        var visits = 2;
+        var frameworkStatus = "active";
+        var member = await Host().RegisterMember(visits, ClubTime.Today().AddDays(30));
+        var lesson = await Host().Lesson()
+            .Capacity(2)
+            .StartsAt(DateTime.UtcNow.AddDays(2))
+            .Pass(member.Number, visits)
+            .Create();
+
+        // Act
+        var created = await member.Book(lesson, seats);
+
+        // Assert
+        (await Host().EnrollmentStatusText(created.Id)).ShouldBe(frameworkStatus);
     }
 }

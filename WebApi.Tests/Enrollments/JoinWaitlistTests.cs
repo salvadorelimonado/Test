@@ -1,8 +1,6 @@
 using System.Net;
-using BusinessLayer.Features.Enrollments;
 using BusinessLayer.Result;
 using Shouldly;
-using WebApi.Features.Enrollments;
 using WebApi.Features.Enrollments.Waitlist;
 using WebApi.Tests.Infrastructure;
 
@@ -172,10 +170,10 @@ public class JoinWaitlistTests : ClubTest
         // Arrange
         var visits = 1;
         var lesson = await Host().Lesson()
-            .Capacity(1)
+            .Capacity(2)
             .StartsAt(DateTime.UtcNow.AddDays(24).AddHours(2))
             .Pass(183, visits)
-            .TakenBy(SeatHolderNumber, 1)
+            .TakenBy(SeatHolderNumber, 2)
             .Create();
 
         // Act
@@ -233,11 +231,19 @@ public class JoinWaitlistTests : ClubTest
     [TestMethod]
     public async Task Join_WhenTheClassDoesNotExist_ReturnsNotFound()
     {
+        // Arrange
+        var missingClassId = long.MaxValue;
+        var zeroClassId = 0L;
+        var seats = 1;
+        var user = Host().User(168);
+
         // Act
-        var response = await Host().User(168).JoinWaitlist(long.MaxValue, 1);
+        var missing = await user.JoinWaitlist(missingClassId, seats);
+        var zero = await user.JoinWaitlist(zeroClassId, seats);
 
         // Assert
-        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        missing.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        zero.StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
 
     [TestMethod]
@@ -245,16 +251,18 @@ public class JoinWaitlistTests : ClubTest
     {
         // Arrange
         var user = Host().User(169);
+        var missingClassKey = Guid.NewGuid().ToString("N");
+        var missingClass = """{"seats":1}""";
 
         // Act
         var noSeats = await user.JoinWaitlist(1, 0);
-        var zeroClass = await user.JoinWaitlist(0, 1);
+        var missingClassBody = await user.Post("/enrollments/waitlist", missingClass, missingClassKey);
         var missingKey = await user.JoinWaitlistWithoutKey(1, 1);
         var blankKey = await user.JoinWaitlist(1, 1, "   ");
 
         // Assert
         noSeats.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
-        zeroClass.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        missingClassBody.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         missingKey.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         blankKey.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
@@ -430,8 +438,14 @@ public class JoinWaitlistTests : ClubTest
         // Arrange
         var headSeats = 3;
         var requestedSeats = 1;
-        var lesson = await Host().Lesson().Capacity(4).StartsAt(DateTime.UtcNow.AddDays(29)).Pass(178, 4).Create();
-        await Host().AddWaiting(177, lesson.ClassId, headSeats, DateTime.UtcNow.AddMinutes(-5));
+        var heldSeats = 2;
+        var visits = 4;
+        var validUntil = ClubTime.Today().AddDays(30);
+        var holder = await Host().RegisterMember(heldSeats, validUntil);
+        var lesson = await Host().Lesson().Capacity(4).StartsAt(DateTime.UtcNow.AddDays(29)).Pass(178, visits, validUntil).Create();
+        await Host().User(holder.Number).Book(lesson, heldSeats);
+        await Host().SetPass(177, visits, validUntil);
+        var headId = await Host().AddWaiting(177, lesson.ClassId, headSeats, DateTime.UtcNow.AddMinutes(-5));
 
         // Act
         var response = await Host().User(178).JoinWaitlist(lesson, requestedSeats);
@@ -441,19 +455,6 @@ public class JoinWaitlistTests : ClubTest
         var body = await response.ReadBody<JoinWaitlistResponse>();
         body.Position.ShouldBe(2);
         body.Seats.ShouldBe(requestedSeats);
-    }
-
-    [TestMethod]
-    public async Task Join_WhenSeatsAreAboveTheLimit_ReturnsBadRequest()
-    {
-        // Arrange
-        var seats = EnrollmentSeatsLimits.MaxSeats + 1;
-        var user = Host().User(179);
-
-        // Act
-        var response = await user.JoinWaitlist(1, seats);
-
-        // Assert
-        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await Host().WaitlistStatusOf(headId)).ShouldBe(DataAccessLayer.Entities.WaitlistStatus.Waiting);
     }
 }

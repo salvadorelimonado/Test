@@ -391,7 +391,7 @@ public class ChangeSeatsTests : ClubTest
         leave.StatusCode.ShouldBe(HttpStatusCode.Conflict);
         await using var stream = await leave.Content.ReadAsStreamAsync();
         using var document = await JsonDocument.ParseAsync(stream);
-        document.RootElement.GetProperty("reason").Deserialize<ConflictReason>().ShouldBe(ConflictReason.AlreadyPromoted);
+        document.RootElement.GetProperty("reason").Deserialize<ConflictReason>(HttpReads.Json).ShouldBe(ConflictReason.AlreadyPromoted);
         var promotedEnrollmentId = document.RootElement.GetProperty("promotedEnrollmentId").GetInt64();
         var waiterCard = await Host().User(34).GetEnrollment(promotedEnrollmentId);
         waiterCard.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -417,10 +417,13 @@ public class ChangeSeatsTests : ClubTest
         // Arrange
         var bookedSeats = 1;
         var requestedSeats = 2;
+        var headSeats = 4;
         var visits = 6;
-        var lesson = await Host().Lesson().Capacity(4).StartsAt(ClubTime.WholeSecond(DateTime.UtcNow.AddDays(2))).Pass(35, visits).Create();
+        var validUntil = ClubTime.Today().AddDays(30);
+        var lesson = await Host().Lesson().Capacity(4).StartsAt(ClubTime.WholeSecond(DateTime.UtcNow.AddDays(2))).Pass(35, visits, validUntil).Create();
         var created = await Host().User(35).Book(lesson, bookedSeats);
-        await Host().AddWaiting(36, lesson.ClassId, 1, DateTime.UtcNow.AddMinutes(-5));
+        await Host().SetPass(36, visits, validUntil);
+        var headId = await Host().AddWaiting(36, lesson.ClassId, headSeats, DateTime.UtcNow.AddMinutes(-5));
 
         // Act
         var response = await Host().User(35).ChangeSeats(created.Id, requestedSeats);
@@ -431,6 +434,7 @@ public class ChangeSeatsTests : ClubTest
         var stored = await Host().Enrollment(created.Id, lesson.UserId);
         stored.Seats.ShouldBe(bookedSeats);
         stored.RemainingVisits.ShouldBe(visits - bookedSeats);
+        (await Host().WaitlistStatusOf(headId)).ShouldBe(WaitlistStatus.Waiting);
     }
 
     [TestMethod]
@@ -453,5 +457,46 @@ public class ChangeSeatsTests : ClubTest
         var stored = await Host().Enrollment(created.Id, lesson.UserId);
         stored.Seats.ShouldBe(bookedSeats);
         stored.RemainingVisits.ShouldBe(visits - bookedSeats);
+    }
+
+    [TestMethod]
+    public async Task ChangeSeats_WhenDecreasingAndTheCallerIsAlsoWaiting_DropsThatRequestAndPromotesTheNext()
+    {
+        // Arrange
+        var bookedSeats = 3;
+        var requestedSeats = 1;
+        var ownRequestSeats = 2;
+        var nextRequestSeats = 2;
+        var ownerVisits = 6;
+        var nextVisits = 4;
+        var validUntil = ClubTime.Today().AddDays(30);
+        var owner = await Host().RegisterMember(ownerVisits, validUntil);
+        var next = await Host().RegisterMember(nextVisits, validUntil);
+        var lesson = await Host().Lesson()
+            .Capacity(bookedSeats)
+            .StartsAt(ClubTime.WholeSecond(DateTime.UtcNow.AddDays(2)))
+            .Pass(owner.Number, ownerVisits, validUntil)
+            .Create();
+        var created = await owner.Book(lesson, bookedSeats);
+        var ownEntryId = await Host().AddWaiting(owner.Number, lesson.ClassId, ownRequestSeats, DateTime.UtcNow.AddMinutes(-10));
+        var nextEntryId = await Host().AddWaiting(next.Number, lesson.ClassId, nextRequestSeats, DateTime.UtcNow.AddMinutes(-5));
+
+        // Act
+        var response = await owner.ChangeSeats(created.Id, requestedSeats);
+
+        // Assert
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var card = await response.ReadBody<EnrollmentCard>();
+        card.Seats.ShouldBe(requestedSeats);
+        card.Pass.RemainingVisits.ShouldBe(ownerVisits - requestedSeats);
+        var ownerId = await Host().UserId(owner.Number);
+        (await Host().WaitlistStatusOf(ownEntryId)).ShouldBe(WaitlistStatus.Cancelled);
+        (await Host().ActiveCount(ownerId, lesson.ClassId)).ShouldBe(1);
+        (await Host().ActiveSeats(ownerId, lesson.ClassId)).ShouldBe(requestedSeats);
+        (await Host().RemainingVisits(ownerId)).ShouldBe(ownerVisits - requestedSeats);
+        (await Host().WaitlistStatusOf(nextEntryId)).ShouldBe(WaitlistStatus.Promoted);
+        var nextUserId = await Host().UserId(next.Number);
+        (await Host().ActiveSeats(nextUserId, lesson.ClassId)).ShouldBe(nextRequestSeats);
+        (await Host().RemainingVisits(nextUserId)).ShouldBe(nextVisits - nextRequestSeats);
     }
 }

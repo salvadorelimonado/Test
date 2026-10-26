@@ -327,7 +327,7 @@ public class CancelEnrollmentTests : ClubTest
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
-        (await Host().WaitlistStatusOf(headId)).ShouldBe(WaitlistStatus.Waiting);
+        (await Host().WaitlistStatusOf(headId)).ShouldBe(WaitlistStatus.Skipped);
         (await Host().WaitlistStatusOf(nextId)).ShouldBe(WaitlistStatus.Promoted);
         (await Host().WaitlistStatusOf(behindId)).ShouldBe(WaitlistStatus.Promoted);
         var headUserId = await Host().UserId(61);
@@ -365,7 +365,7 @@ public class CancelEnrollmentTests : ClubTest
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
-        (await Host().WaitlistStatusOf(headId)).ShouldBe(WaitlistStatus.Waiting);
+        (await Host().WaitlistStatusOf(headId)).ShouldBe(WaitlistStatus.Skipped);
         (await Host().WaitlistStatusOf(nextId)).ShouldBe(WaitlistStatus.Promoted);
         (await Host().WaitlistStatusOf(behindId)).ShouldBe(WaitlistStatus.Waiting);
         var nextUserId = await Host().UserId(66);

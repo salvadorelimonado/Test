@@ -24,11 +24,11 @@ public class LeaveWaitlistTests : ClubTest
         var lesson = await Host().Lesson()
             .Capacity(1)
             .StartsAt(DateTime.UtcNow.AddDays(40))
-            .Pass(180, 0, validUntil)
+            .Pass(180, requestedSeats, validUntil)
             .TakenBy(SeatHolderNumber, 1)
             .Create();
-        await Host().SetPass(181, 0, validUntil);
-        await Host().SetPass(182, 0, validUntil);
+        await Host().SetPass(181, requestedSeats, validUntil);
+        await Host().SetPass(182, requestedSeats, validUntil);
         var firstEntry = await Host().User(180).Join(lesson, requestedSeats);
         var secondJoin = await Host().User(181).JoinWaitlist(lesson, requestedSeats);
         secondJoin.EnsureSuccessStatusCode();
@@ -162,7 +162,7 @@ public class LeaveWaitlistTests : ClubTest
         response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
         await using var stream = await response.Content.ReadAsStreamAsync();
         using var document = await JsonDocument.ParseAsync(stream);
-        document.RootElement.GetProperty("reason").Deserialize<ConflictReason>().ShouldBe(ConflictReason.AlreadyPromoted);
+        document.RootElement.GetProperty("reason").Deserialize<ConflictReason>(HttpReads.Json).ShouldBe(ConflictReason.AlreadyPromoted);
         var promotedEnrollmentId = document.RootElement.GetProperty("promotedEnrollmentId").GetInt64();
         var cardResponse = await Host().User(194).GetEnrollment(promotedEnrollmentId);
         cardResponse.StatusCode.ShouldBe(HttpStatusCode.OK);

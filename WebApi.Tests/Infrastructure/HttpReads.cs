@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using BusinessLayer.Result;
 using Shouldly;
 
@@ -7,9 +8,17 @@ namespace WebApi.Tests.Infrastructure;
 
 public static class HttpReads
 {
+    public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
+    {
+        Converters =
+        {
+            new JsonStringEnumConverter(JsonNamingPolicy.KebabCaseLower)
+        }
+    };
+
     public static async Task<T> ReadBody<T>(this HttpResponseMessage response)
     {
-        var body = await response.Content.ReadFromJsonAsync<T>();
+        var body = await response.Content.ReadFromJsonAsync<T>(Json);
         if (body is null)
         {
             throw new InvalidOperationException("Response body is empty.");
@@ -28,7 +37,7 @@ public static class HttpReads
             throw new InvalidOperationException("Conflict response has no reason.");
         }
 
-        return reason.Deserialize<ConflictReason>();
+        return reason.Deserialize<ConflictReason>(Json);
     }
 
     public static async Task<string> ReadReasonText(this HttpResponseMessage response)

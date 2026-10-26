@@ -1,4 +1,5 @@
 using System.Net;
+using DataAccessLayer.Entities;
 using Shouldly;
 using WebApi.Tests.Infrastructure;
 
@@ -66,5 +67,42 @@ public class EnrollmentRaceTests : ClubTest
         (await rejected.ReadReasonText()).ShouldBe("pass-exhausted");
         (await Host().RemainingVisits(lesson.UserId)).ShouldBe(0);
         (await Host().SumActiveSeats(lesson.ClassId)).ShouldBe(seats);
+    }
+
+    [TestMethod]
+    public async Task Cancel_WhenTwoClassesPromoteEachOthersPass_BothSucceed()
+    {
+        // Arrange
+        var seats = 1;
+        var visits = 2;
+        var validUntil = ClubTime.Today().AddDays(25);
+        var startsAt = ClubTime.WholeSecond(DateTime.UtcNow.AddDays(18));
+        var first = await Host().RegisterMember(visits, validUntil);
+        var second = await Host().RegisterMember(visits, validUntil);
+        var firstLesson = await Host().Lesson()
+            .Capacity(seats)
+            .StartsAt(startsAt)
+            .Pass(first.Number, visits, validUntil)
+            .Create();
+        var secondLesson = await Host().Lesson()
+            .Capacity(seats)
+            .StartsAt(startsAt.AddHours(1))
+            .Pass(second.Number, visits, validUntil)
+            .Create();
+        var firstBooking = await Host().User(first.Number).Book(firstLesson, seats);
+        var secondBooking = await Host().User(second.Number).Book(secondLesson, seats);
+        var firstWaiting = await Host().User(first.Number).Join(secondLesson, seats);
+        var secondWaiting = await Host().User(second.Number).Join(firstLesson, seats);
+
+        // Act
+        var responses = await Task.WhenAll(
+            Host().User(first.Number).CancelEnrollment(firstBooking.Id),
+            Host().User(second.Number).CancelEnrollment(secondBooking.Id));
+
+        // Assert
+        responses[0].StatusCode.ShouldBe(HttpStatusCode.OK);
+        responses[1].StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await Host().WaitlistStatusOf(firstWaiting.Id)).ShouldBe(WaitlistStatus.Promoted);
+        (await Host().WaitlistStatusOf(secondWaiting.Id)).ShouldBe(WaitlistStatus.Promoted);
     }
 }

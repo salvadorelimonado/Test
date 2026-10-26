@@ -144,6 +144,41 @@ public class GetScheduleTests : ClubTest
     }
 
     [TestMethod]
+    public async Task Get_WhenTheBoundHasFractionalSecondsOrNoSeconds_ParsesItAsUtc()
+    {
+        // Arrange
+        var startsAt = new DateTime(2099, 4, 8, 10, 0, 0, DateTimeKind.Utc);
+        var visits = 4;
+        var validUntil = ClubTime.Today().AddDays(30);
+        var member = await Host().RegisterMember(visits, validUntil);
+        var lesson = await Host().Lesson().Capacity(8).StartsAt(startsAt).Pass(member.Number, visits, validUntil).Create();
+        var user = Host().User(member.Number);
+        var atTheStart = "2099-04-08T10:00:00.000Z";
+        var fraction = "2099-04-08T10:00:00.1234567Z";
+        var oneSecondLater = "2099-04-08T10:00:01Z";
+        var minute = "2099-04-08T10:00Z";
+        var nextMinute = "2099-04-08T10:01Z";
+
+        // Act
+        var throughTheFraction = await user.Schedule(atTheStart, fraction);
+        var afterTheFraction = await user.Schedule(fraction, oneSecondLater);
+        var wholeMinute = await user.Schedule(minute, nextMinute);
+
+        // Assert
+        throughTheFraction.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var included = await throughTheFraction.ReadBody<SchedulePage>();
+        included.Items.Count.ShouldBe(1);
+        included.Items[0].ClassId.ShouldBe(lesson.ClassId);
+        afterTheFraction.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var excluded = await afterTheFraction.ReadBody<SchedulePage>();
+        excluded.Items.Count.ShouldBe(0);
+        wholeMinute.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var byMinute = await wholeMinute.ReadBody<SchedulePage>();
+        byMinute.Items.Count.ShouldBe(1);
+        byMinute.Items[0].ClassId.ShouldBe(lesson.ClassId);
+    }
+
+    [TestMethod]
     public async Task Get_PagesByStartThenIdAndUsesTheDefaultLimit()
     {
         // Arrange
