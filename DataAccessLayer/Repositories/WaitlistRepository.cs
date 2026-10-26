@@ -12,6 +12,23 @@ public class WaitlistRepository : GenericRepository<WaitlistEntry>, IWaitlistRep
     {
     }
 
+    public async Task<WaitlistOwner?> FindOwnerAsync(long id, CancellationToken ct = default)
+    {
+        return await _dbSet
+            .AsNoTracking()
+            .Where(entry => entry.Id == id)
+            .Select(entry => new WaitlistOwner(entry.UserId, entry.ClassId))
+            .FirstOrDefaultAsync(ct);
+    }
+
+    public async Task<WaitlistEntry?> GetByIdForUpdateAsync(long id, CancellationToken ct = default)
+    {
+        return await _dbSet
+            .Where(entry => entry.Id == id)
+            .ForUpdate()
+            .FirstOrDefaultAsync(ct);
+    }
+
     public async Task<List<WaitlistEntry>> ListWaitingForUpdateAsync(long classId, CancellationToken ct = default)
     {
         return await _dbSet
