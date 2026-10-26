@@ -59,6 +59,9 @@ public static class TestDatabase
     [AssemblyCleanup]
     public static async Task CleanupAsync()
     {
+        Infrastructure.ClubTest.DisposeHosts();
+        Infrastructure.Club.Shutdown();
+
         if (_databaseName == null)
         {
             return;
