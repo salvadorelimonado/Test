@@ -1,4 +1,5 @@
 using Common.Database.Repositories.Generic;
+using DataAccessLayer.Database;
 using DataAccessLayer.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -29,7 +30,7 @@ public class WaitlistRepository : GenericRepository<WaitlistEntry>, IWaitlistRep
 
     public async Task<List<WaitlistEntry>> ListWaitingForUpdateAsync(long classId, CancellationToken ct = default)
     {
-        var waiting = nameof(WaitlistStatus.Waiting);
+        var waiting = LowercaseEnumConverter.ToColumn(WaitlistStatus.Waiting);
         return await _dbSet
             .FromSql($"SELECT * FROM waitlist_entries WHERE class_id = {classId} AND status = {waiting} ORDER BY created_at, id FOR UPDATE")
             .ToListAsync(ct);
