@@ -150,11 +150,12 @@ public sealed class CreateEnrollmentService
         var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(command.ClassId, ct);
         var freeSeats = scheduledClass.Capacity - takenSeats;
         var waiting = await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(command.ClassId, ct);
+        var others = WaitlistFillResult.ExceptOwnRequest(waiting, command.UserId);
         var passes = await _unitOfWork.Pass.GetByUsersForUpdateAsync(
-            WaitlistFillResult.PassIdsToLock(waiting, command.UserId),
+            WaitlistFillResult.PassIdsToLock(others, command.UserId),
             ct);
         var pass = WaitlistFillResult.Require(passes, command.UserId);
-        var promotion = WaitlistFillResult.Fill(scheduledClass, waiting, passes, freeSeats, now);
+        var promotion = WaitlistFillResult.Fill(scheduledClass, others, passes, freeSeats, now);
         if (promotion.Changed)
         {
             await _unitOfWork.SaveChangesAsync(ct);

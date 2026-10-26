@@ -383,7 +383,7 @@ public class CreateEnrollmentTests : ClubTest
     }
 
     [TestMethod]
-    public async Task Create_WhenTheCallersOwnRequestWouldBePromoted_LeavesTheQueueUntouched()
+    public async Task Create_WhenTheCallerIsAlsoWaiting_BooksAndLeavesThatRequest()
     {
         // Arrange
         var requestedSeats = 1;
@@ -402,11 +402,13 @@ public class CreateEnrollmentTests : ClubTest
         var response = await member.Enroll(lesson, requestedSeats);
 
         // Assert
-        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
-        (await response.ReadReason()).ShouldBe(ConflictReason.PassExhausted);
+        response.StatusCode.ShouldBe(HttpStatusCode.Created);
+        var body = await response.ReadBody<CreateEnrollmentResponse>();
+        body.Seats.ShouldBe(requestedSeats);
+        body.Status.ShouldBe(EnrollmentStatus.Active);
         (await Host().WaitlistStatusOf(entryId)).ShouldBe(WaitlistStatus.Waiting);
-        (await Host().ActiveCount(lesson.UserId, lesson.ClassId)).ShouldBe(0);
-        (await Host().RemainingVisits(lesson.UserId)).ShouldBe(visits);
+        (await Host().ActiveSeats(lesson.UserId, lesson.ClassId)).ShouldBe(requestedSeats);
+        (await Host().RemainingVisits(lesson.UserId)).ShouldBe(visits - requestedSeats);
     }
 
     [TestMethod]

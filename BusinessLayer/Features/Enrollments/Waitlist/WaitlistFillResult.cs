@@ -39,6 +39,13 @@ public sealed class WaitlistFillResult
         return waiting.Where(entry => entry.Status == WaitlistStatus.Waiting).ToList();
     }
 
+    public static List<WaitlistEntry> ExceptOwnRequest(IReadOnlyList<WaitlistEntry> waiting, long userId)
+    {
+        // решение: при записи и увеличении мест свою заявку не продвигаем и не снимаем.
+        // Контракт разрешает ждать ещё места при уже активной брони.
+        return waiting.Where(entry => entry.UserId != userId).ToList();
+    }
+
     public static IReadOnlyList<long> PassIdsToLock(
         IReadOnlyList<WaitlistEntry> waiting,
         long? includeUserId)

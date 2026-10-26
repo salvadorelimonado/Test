@@ -460,6 +460,41 @@ public class ChangeSeatsTests : ClubTest
     }
 
     [TestMethod]
+    public async Task ChangeSeats_WhenIncreasingAndTheCallerIsAlsoWaiting_KeepsThatRequest()
+    {
+        // Arrange
+        var bookedSeats = 1;
+        var requestedSeats = 2;
+        var ownRequestSeats = 2;
+        var visits = 3;
+        var capacity = 4;
+        var validUntil = ClubTime.Today().AddDays(30);
+        var owner = await Host().RegisterMember(visits, validUntil);
+        var lesson = await Host().Lesson()
+            .Capacity(capacity)
+            .StartsAt(ClubTime.WholeSecond(DateTime.UtcNow.AddDays(3)))
+            .Pass(owner.Number, visits, validUntil)
+            .Create();
+        var created = await owner.Book(lesson, bookedSeats);
+        var ownEntryId = await Host().AddWaiting(
+            owner.Number,
+            lesson.ClassId,
+            ownRequestSeats,
+            DateTime.UtcNow.AddMinutes(-5));
+
+        // Act
+        var response = await owner.ChangeSeats(created.Id, requestedSeats);
+
+        // Assert
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var stored = await Host().Enrollment(created.Id, lesson.UserId);
+        stored.Seats.ShouldBe(requestedSeats);
+        stored.RemainingVisits.ShouldBe(visits - requestedSeats);
+        (await Host().WaitlistStatusOf(ownEntryId)).ShouldBe(WaitlistStatus.Waiting);
+        (await Host().SumActiveSeats(lesson.ClassId)).ShouldBe(requestedSeats);
+    }
+
+    [TestMethod]
     public async Task ChangeSeats_WhenDecreasingAndTheCallerIsAlsoWaiting_DropsThatRequestAndPromotesTheNext()
     {
         // Arrange

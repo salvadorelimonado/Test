@@ -123,6 +123,26 @@ public class WaitlistFillResultTests
     }
 
     [TestMethod]
+    public void ExceptOwnRequest_LeavesThatEntryWaiting()
+    {
+        // Arrange
+        var ownerUserId = 42L;
+        var nextUserId = 43L;
+        var ownerSeats = 2;
+        var nextSeats = 1;
+        var now = new DateTime(2032, 6, 6, 9, 0, 0, DateTimeKind.Utc);
+        var own = Waiting(ownerUserId, ownerSeats, now.AddMinutes(-10));
+        var next = Waiting(nextUserId, nextSeats, now.AddMinutes(-5));
+
+        // Act
+        var others = WaitlistFillResult.ExceptOwnRequest([own, next], ownerUserId);
+
+        // Assert
+        own.Status.ShouldBe(WaitlistStatus.Waiting);
+        others.ShouldBe([next]);
+    }
+
+    [TestMethod]
     public void PassIdsToLock_SortsTheOwnerTogetherWithTheQueue()
     {
         // Arrange
