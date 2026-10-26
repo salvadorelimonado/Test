@@ -5,6 +5,8 @@ namespace Common.Caching;
 
 public class RedisCacheService : ICacheService
 {
+    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+
     private readonly IConnectionMultiplexer _connection;
     private readonly TimeSpan _defaultTtl;
 
@@ -23,13 +25,12 @@ public class RedisCacheService : ICacheService
             return default;
         }
 
-        var json = value.ToString();
-        return JsonSerializer.Deserialize<T>(json, JsonSerializerOptions.Web);
+        return JsonSerializer.Deserialize<T>(value!, SerializerOptions);
     }
 
     public async Task SetAsync<T>(string key, T value, TimeSpan? ttl = null, CancellationToken ct = default)
     {
-        var payload = JsonSerializer.Serialize(value, JsonSerializerOptions.Web);
+        var payload = JsonSerializer.Serialize(value, SerializerOptions);
 
         await _connection.GetDatabase().StringSetAsync(key, payload, ttl ?? _defaultTtl);
     }
@@ -37,26 +38,5 @@ public class RedisCacheService : ICacheService
     public async Task RemoveAsync(string key, CancellationToken ct = default)
     {
         await _connection.GetDatabase().KeyDeleteAsync(key);
-    }
-
-    public async Task<long?> ReadLongAsync(string key, CancellationToken ct = default)
-    {
-        var value = await _connection.GetDatabase().StringGetAsync(key);
-        if (value.IsNullOrEmpty)
-        {
-            return null;
-        }
-
-        if (!long.TryParse(value.ToString(), out var number))
-        {
-            throw new InvalidOperationException("Cache counter is not a number.");
-        }
-
-        return number;
-    }
-
-    public async Task<long> IncrementAsync(string key, CancellationToken ct = default)
-    {
-        return await _connection.GetDatabase().StringIncrementAsync(key);
     }
 }
