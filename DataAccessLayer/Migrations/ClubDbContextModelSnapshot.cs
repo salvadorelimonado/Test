@@ -116,7 +116,8 @@ namespace DataAccessLayer.Migrations
                         .HasDatabaseName("ix_enrollments_user_id");
 
                     b.HasIndex("ClassId", "Status")
-                        .HasDatabaseName("ix_enrollments_class_id_status");
+                        .HasDatabaseName("ix_enrollments_class_id_status")
+                        .HasAnnotation("Npgsql:IndexInclude", new[] { "Seats" });
 
                     b.ToTable("enrollments", (string)null, t =>
                         {

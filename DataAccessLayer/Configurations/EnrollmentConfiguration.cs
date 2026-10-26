@@ -24,7 +24,8 @@ public class EnrollmentConfiguration : IEntityTypeConfiguration<Enrollment>
             .WithMany(x => x.Enrollments)
             .HasForeignKey(x => x.ClassId);
 
-        builder.HasIndex(x => new { x.ClassId, x.Status });
+        builder.HasIndex(x => new { x.ClassId, x.Status })
+            .IncludeProperties(x => x.Seats);
 
         builder.ToTable(table => table.HasCheckConstraint(
             "ck_enrollments_seats",
