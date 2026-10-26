@@ -1,6 +1,7 @@
 using BusinessLayer.Result;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.RateLimiting;
 using BusinessLayer.Features.Enrollments.Cancel;
 using BusinessLayer.Features.Enrollments.ChangeSeats;
@@ -47,10 +48,15 @@ public class EnrollmentsController : BaseApiController
 
     [HttpPost]
     public async Task<IActionResult> Create(
-        [FromBody] CreateEnrollmentRequest request,
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] CreateEnrollmentRequest? request,
         [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey,
         CancellationToken ct)
     {
+        if (request is null)
+        {
+            return ApiProblemsHelper.Create(StatusCodes.Status400BadRequest);
+        }
+
         if (string.IsNullOrWhiteSpace(idempotencyKey))
         {
             return ApiProblemsHelper.Create(StatusCodes.Status400BadRequest);
@@ -69,10 +75,15 @@ public class EnrollmentsController : BaseApiController
 
     [HttpPost("waitlist")]
     public async Task<IActionResult> JoinWaitlist(
-        [FromBody] JoinWaitlistRequest request,
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] JoinWaitlistRequest? request,
         [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey,
         CancellationToken ct)
     {
+        if (request is null)
+        {
+            return ApiProblemsHelper.Create(StatusCodes.Status400BadRequest);
+        }
+
         if (string.IsNullOrWhiteSpace(idempotencyKey))
         {
             return ApiProblemsHelper.Create(StatusCodes.Status400BadRequest);
@@ -102,8 +113,15 @@ public class EnrollmentsController : BaseApiController
     }
 
     [HttpPost("{id}/seats")]
-    public async Task<IActionResult> ChangeSeats(long id, [FromBody] ChangeSeatsRequest request, CancellationToken ct)
+    public async Task<IActionResult> ChangeSeats(
+        long id,
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] ChangeSeatsRequest? request,
+        CancellationToken ct)
     {
+        if (request is null)
+        {
+            return ApiProblemsHelper.Create(StatusCodes.Status400BadRequest);
+        }
         var command = new ChangeSeatsCommand
         {
             UserId = CurrentUserId,
