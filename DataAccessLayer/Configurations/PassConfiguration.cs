@@ -14,5 +14,9 @@ public class PassConfiguration : IEntityTypeConfiguration<Pass>
             .HasOne<User>()
             .WithMany()
             .HasForeignKey(x => x.UserId);
+
+        builder.ToTable(table => table.HasCheckConstraint(
+            "ck_passes_remaining_visits",
+            "remaining_visits >= 0"));
     }
 }

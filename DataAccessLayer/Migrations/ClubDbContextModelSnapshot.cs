@@ -118,7 +118,10 @@ namespace DataAccessLayer.Migrations
                     b.HasIndex("ClassId", "Status")
                         .HasDatabaseName("ix_enrollments_class_id_status");
 
-                    b.ToTable("enrollments", (string)null);
+                    b.ToTable("enrollments", (string)null, t =>
+                        {
+                            t.HasCheckConstraint("ck_enrollments_seats", "seats > 0");
+                        });
                 });
 
             modelBuilder.Entity("DataAccessLayer.Entities.IdempotencyRecord", b =>
@@ -200,7 +203,10 @@ namespace DataAccessLayer.Migrations
                     b.HasIndex("UserId")
                         .HasDatabaseName("ix_passes_user_id");
 
-                    b.ToTable("passes", (string)null);
+                    b.ToTable("passes", (string)null, t =>
+                        {
+                            t.HasCheckConstraint("ck_passes_remaining_visits", "remaining_visits >= 0");
+                        });
                 });
 
             modelBuilder.Entity("DataAccessLayer.Entities.Room", b =>
@@ -305,7 +311,10 @@ namespace DataAccessLayer.Migrations
                     b.HasIndex("ClassId", "Status", "CreatedAt", "Id")
                         .HasDatabaseName("ix_waitlist_entries_class_id_status_created_at_id");
 
-                    b.ToTable("waitlist_entries", (string)null);
+                    b.ToTable("waitlist_entries", (string)null, t =>
+                        {
+                            t.HasCheckConstraint("ck_waitlist_entries_seats", "seats > 0");
+                        });
                 });
 
             modelBuilder.Entity("DataAccessLayer.Entities.Class", b =>

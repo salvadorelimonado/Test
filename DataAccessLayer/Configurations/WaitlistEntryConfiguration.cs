@@ -33,5 +33,9 @@ public class WaitlistEntryConfiguration : IEntityTypeConfiguration<WaitlistEntry
         builder.HasIndex(x => new { x.UserId, x.ClassId })
             .IsUnique()
             .HasFilter($"status = '{nameof(WaitlistStatus.Waiting)}'");
+
+        builder.ToTable(table => table.HasCheckConstraint(
+            "ck_waitlist_entries_seats",
+            "seats > 0"));
     }
 }
