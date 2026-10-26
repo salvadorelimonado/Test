@@ -21,4 +21,26 @@ public class WaitlistRepository : GenericRepository<WaitlistEntry>, IWaitlistRep
             .ForUpdate()
             .ToListAsync(ct);
     }
+
+    public async Task<WaitlistEntry?> FindWaitingAsync(long userId, long classId, CancellationToken ct = default)
+    {
+        return await _dbSet
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                entry => entry.UserId == userId && entry.ClassId == classId && entry.Status == WaitlistStatus.Waiting,
+                ct);
+    }
+
+    public async Task<int> CountWaitingPositionAsync(
+        long classId,
+        DateTime createdAt,
+        long entryId,
+        CancellationToken ct = default)
+    {
+        return await _dbSet.CountAsync(
+            entry => entry.ClassId == classId
+                && entry.Status == WaitlistStatus.Waiting
+                && (entry.CreatedAt < createdAt || (entry.CreatedAt == createdAt && entry.Id <= entryId)),
+            ct);
+    }
 }
