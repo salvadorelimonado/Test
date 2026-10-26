@@ -16,6 +16,9 @@ namespace DataAccessLayer.Migrations
                 type: "integer",
                 nullable: false,
                 defaultValue: 0);
+
+            migrationBuilder.Sql(
+                "UPDATE enrollments SET refunded_visits = seats WHERE status = 'cancelled';");
         }
 
         /// <inheritdoc />
