@@ -10,7 +10,7 @@ namespace WebApi.Features.Schedule;
 
 [ApiController]
 [Authorize]
-[EnableRateLimiting(EnrollmentRateLimit.PolicyName)]
+[EnableRateLimiting(ApiRateLimit.PolicyName)]
 [Route("schedule")]
 public class ScheduleController : BaseApiController
 {

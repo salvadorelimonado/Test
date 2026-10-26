@@ -2,16 +2,16 @@ using System.Security.Claims;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.WebUtilities;
+using RedisRateLimiting;
+using StackExchange.Redis;
 
 namespace WebApi.RateLimiting;
 
-public static class EnrollmentRateLimit
+public static class ApiRateLimit
 {
-    public const string PolicyName = "enrollments";
+    public const string PolicyName = "api";
 
     public const int PermitLimit = 60;
-
-    private const int SegmentsPerWindow = 1;
 
     private static readonly TimeSpan Window = TimeSpan.FromMinutes(1);
 
@@ -36,14 +36,15 @@ public static class EnrollmentRateLimit
                     return RateLimitPartition.GetNoLimiter(string.Empty);
                 }
 
-                return RateLimitPartition.GetSlidingWindowLimiter(
+                var redis = httpContext.RequestServices.GetRequiredService<IConnectionMultiplexer>();
+
+                return RedisRateLimitPartition.GetSlidingWindowRateLimiter(
                     userId,
-                    _ => new SlidingWindowRateLimiterOptions
+                    _ => new RedisSlidingWindowRateLimiterOptions
                     {
+                        ConnectionMultiplexerFactory = () => redis,
                         PermitLimit = PermitLimit,
-                        Window = Window,
-                        SegmentsPerWindow = SegmentsPerWindow,
-                        QueueLimit = 0
+                        Window = Window
                     });
             });
         });

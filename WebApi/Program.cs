@@ -60,7 +60,7 @@ builder.Services.AddScoped<GetScheduleService>();
 builder.Services.AddScoped<GetLoadService>();
 builder.Services.AddScoped<IdempotencyKeyReader>();
 
-EnrollmentRateLimit.Add(builder.Services);
+ApiRateLimit.Add(builder.Services);
 
 builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
     ConnectionMultiplexer.Connect(builder.Configuration.GetConnectionString("Redis")!));
@@ -101,9 +101,11 @@ app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseSwagger();
 app.UseSwaggerUI();
 
+app.UseRouting();
 app.UseAuthentication();
-app.UseAuthorization();
+
 app.UseRateLimiter();
+app.UseAuthorization();
 
 app.MapControllers();
 app.MapHealthChecks("/health");

@@ -20,7 +20,7 @@ namespace WebApi.Features.Enrollments;
 
 [ApiController]
 [Authorize]
-[EnableRateLimiting(EnrollmentRateLimit.PolicyName)]
+[EnableRateLimiting(ApiRateLimit.PolicyName)]
 [Route("enrollments")]
 public class EnrollmentsController : BaseApiController
 {

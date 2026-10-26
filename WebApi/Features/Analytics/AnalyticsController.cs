@@ -9,7 +9,7 @@ namespace WebApi.Features.Analytics;
 
 [ApiController]
 [Authorize(Roles = BaseApiController.AdminRole)]
-[EnableRateLimiting(EnrollmentRateLimit.PolicyName)]
+[EnableRateLimiting(ApiRateLimit.PolicyName)]
 [Route("analytics")]
 public class AnalyticsController : BaseApiController
 {
