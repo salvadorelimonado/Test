@@ -54,15 +54,16 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<IdempotencyService>();
+builder.Services.AddScoped<WaitlistPromotionService>();
 builder.Services.AddSingleton<EnrollmentCardCache>();
-builder.Services.AddScoped<CreateEnrollmentService>();
-builder.Services.AddScoped<ChangeSeatsService>();
-builder.Services.AddScoped<CancelEnrollmentService>();
-builder.Services.AddScoped<GetEnrollmentService>();
-builder.Services.AddScoped<JoinWaitlistService>();
-builder.Services.AddScoped<LeaveWaitlistService>();
-builder.Services.AddScoped<GetScheduleService>();
-builder.Services.AddScoped<GetLoadService>();
+builder.Services.AddScoped<CreateEnrollmentHandler>();
+builder.Services.AddScoped<ChangeSeatsHandler>();
+builder.Services.AddScoped<CancelEnrollmentHandler>();
+builder.Services.AddScoped<GetEnrollmentHandler>();
+builder.Services.AddScoped<JoinWaitlistHandler>();
+builder.Services.AddScoped<LeaveWaitlistHandler>();
+builder.Services.AddScoped<GetScheduleHandler>();
+builder.Services.AddScoped<GetLoadHandler>();
 
 builder.Services.AddApiRateLimit();
 

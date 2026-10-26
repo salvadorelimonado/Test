@@ -13,11 +13,11 @@ namespace WebApi.Features.Schedule;
 [Route("schedule")]
 public class ScheduleController : BaseApiController
 {
-    private readonly GetScheduleService _getScheduleService;
+    private readonly GetScheduleHandler _getScheduleHandler;
 
-    public ScheduleController(GetScheduleService getScheduleService)
+    public ScheduleController(GetScheduleHandler getScheduleHandler)
     {
-        _getScheduleService = getScheduleService;
+        _getScheduleHandler = getScheduleHandler;
     }
 
     [HttpGet]
@@ -34,7 +34,7 @@ public class ScheduleController : BaseApiController
             Limit = request.Limit ?? SchedulePaginationLimits.DefaultPageSize,
             Cursor = request.ContinuationToken
         };
-        var page = await _getScheduleService.GetAsync(query, ct);
+        var page = await _getScheduleHandler.GetAsync(query, ct);
         return Ok(ScheduleMapper.ToResponse(page));
     }
 }

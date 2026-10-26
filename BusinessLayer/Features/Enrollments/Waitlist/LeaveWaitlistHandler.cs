@@ -6,18 +6,24 @@ using DataAccessLayer.UnitOfWork;
 
 namespace BusinessLayer.Features.Enrollments.Waitlist;
 
-public sealed class LeaveWaitlistService
+public sealed class LeaveWaitlistHandler
 {
     private const string PromotedEnrollmentId = "promotedEnrollmentId";
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly TimeProvider _clock;
+    private readonly WaitlistPromotionService _waitlistPromotion;
     private readonly EnrollmentCardCache _cardCache;
 
-    public LeaveWaitlistService(IUnitOfWork unitOfWork, TimeProvider clock, EnrollmentCardCache cardCache)
+    public LeaveWaitlistHandler(
+        IUnitOfWork unitOfWork,
+        TimeProvider clock,
+        WaitlistPromotionService waitlistPromotion,
+        EnrollmentCardCache cardCache)
     {
         _unitOfWork = unitOfWork;
         _clock = clock;
+        _waitlistPromotion = waitlistPromotion;
         _cardCache = cardCache;
     }
 
@@ -100,35 +106,7 @@ public sealed class LeaveWaitlistService
             return [];
         }
 
-        var promotion = await PromoteWaitingAsync(scheduledClass, now, ct);
-        return promotion.PromotedUserIds;
-    }
-
-    private async Task<WaitlistFillResult> PromoteWaitingAsync(Class scheduledClass, DateTime now, CancellationToken ct)
-    {
-        if (scheduledClass.IsCancelled)
-        {
-            return WaitlistFillResult.None;
-        }
-
-        var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(scheduledClass.Id, ct);
-        var freeSeats = scheduledClass.Capacity - takenSeats;
-        var waiting = await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct);
-        if (waiting.Count == 0)
-        {
-            return WaitlistFillResult.None;
-        }
-
-        var passes = await _unitOfWork.Pass.GetByUsersForUpdateAsync(
-            WaitlistFillResult.PassIdsToLock(waiting, null),
-            ct);
-        var result = WaitlistFillResult.Fill(scheduledClass, waiting, passes, freeSeats, now);
-        if (result.Changed)
-        {
-            await _unitOfWork.SaveChangesAsync(ct);
-        }
-
-        return result;
+        return await _waitlistPromotion.PromoteAsync(scheduledClass, now, null, null, ct);
     }
 
     private static LeaveAttempt Done(LeftWaitlist response, IReadOnlyList<long> promotedUserIds)

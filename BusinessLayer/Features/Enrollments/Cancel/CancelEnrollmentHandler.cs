@@ -7,18 +7,24 @@ using DataAccessLayer.UnitOfWork;
 
 namespace BusinessLayer.Features.Enrollments.Cancel;
 
-public sealed class CancelEnrollmentService
+public sealed class CancelEnrollmentHandler
 {
     private static readonly TimeSpan FullRefundLeadTime = TimeSpan.FromHours(2);
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly TimeProvider _clock;
+    private readonly WaitlistPromotionService _waitlistPromotion;
     private readonly EnrollmentCardCache _cardCache;
 
-    public CancelEnrollmentService(IUnitOfWork unitOfWork, TimeProvider clock, EnrollmentCardCache cardCache)
+    public CancelEnrollmentHandler(
+        IUnitOfWork unitOfWork,
+        TimeProvider clock,
+        WaitlistPromotionService waitlistPromotion,
+        EnrollmentCardCache cardCache)
     {
         _unitOfWork = unitOfWork;
         _clock = clock;
+        _waitlistPromotion = waitlistPromotion;
         _cardCache = cardCache;
     }
 
@@ -78,7 +84,9 @@ public sealed class CancelEnrollmentService
             {
                 throw new InvalidOperationException("Pass was not found.");
             }
-            var clubRefund = Refund(scheduledClass, enrollment, clubPass, now);
+
+            var clubRefund = RefundedVisits(scheduledClass, enrollment, now);
+            clubPass.RemainingVisits += clubRefund;
             enrollment.Status = EnrollmentStatus.Cancelled;
             enrollment.CancelledAt = now;
             enrollment.RefundedVisits = clubRefund;
@@ -86,32 +94,38 @@ public sealed class CancelEnrollmentService
             return CancelAttempt.Done(new OperationResult<CancelledEnrollment>.Ok(ToResponse(enrollment)), enrollment.UserId);
         }
 
-        var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(scheduledClass.Id, ct);
-        var freeSeats = scheduledClass.Capacity - takenSeats + enrollment.Seats;
         var waiting = await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct);
-        var stillWaiting = WaitlistFillResult.CancelOwnRequest(waiting, enrollment.UserId);
-        var passes = await _unitOfWork.Pass.GetByUsersForUpdateAsync(
-            WaitlistFillResult.PassIdsToLock(stillWaiting, enrollment.UserId),
-            ct);
-        var pass = WaitlistFillResult.Require(passes, enrollment.UserId);
-        var refundedVisits = Refund(scheduledClass, enrollment, pass, now);
+        WaitlistPromotionService.CancelOwnRequest(waiting, enrollment.UserId);
+        var refundedVisits = RefundedVisits(scheduledClass, enrollment, now);
         enrollment.Status = EnrollmentStatus.Cancelled;
         enrollment.CancelledAt = now;
         enrollment.RefundedVisits = refundedVisits;
         await _unitOfWork.SaveChangesAsync(ct);
         // решение: места освобождаем и очередь двигаем даже если до начала меньше двух часов и визиты не вернулись.
-        var promotion = WaitlistFillResult.TryFill(scheduledClass, stillWaiting, passes, freeSeats, now);
-        if (promotion.Changed)
+        var promotedUserIds = await _waitlistPromotion.PromoteAsync(
+            scheduledClass,
+            now,
+            refundedVisits > 0 ? enrollment.UserId : null,
+            null,
+            ct);
+        if (refundedVisits > 0)
         {
+            var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(enrollment.UserId, ct);
+            if (pass is null)
+            {
+                throw new InvalidOperationException("Pass was not found.");
+            }
+
+            pass.RemainingVisits += refundedVisits;
             await _unitOfWork.SaveChangesAsync(ct);
         }
 
         var affectedUserIds = new List<long> { enrollment.UserId };
-        affectedUserIds.AddRange(promotion.PromotedUserIds);
+        affectedUserIds.AddRange(promotedUserIds);
         return CancelAttempt.Done(new OperationResult<CancelledEnrollment>.Ok(ToResponse(enrollment)), affectedUserIds);
     }
 
-    private static int Refund(Class scheduledClass, Enrollment enrollment, Pass pass, DateTime now)
+    private static int RefundedVisits(Class scheduledClass, Enrollment enrollment, DateTime now)
     {
         // решение: полный возврат, если до начала не меньше двух часов или занятие отменил клуб.
         var refundsFully = scheduledClass.IsCancelled || scheduledClass.StartsAt - now >= FullRefundLeadTime;
@@ -120,7 +134,6 @@ public sealed class CancelEnrollmentService
             return 0;
         }
 
-        pass.RemainingVisits += enrollment.Seats;
         return enrollment.Seats;
     }
 

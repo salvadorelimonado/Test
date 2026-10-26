@@ -4,12 +4,12 @@ using DataAccessLayer.UnitOfWork;
 
 namespace BusinessLayer.Features.Enrollments.Get;
 
-public sealed class GetEnrollmentService
+public sealed class GetEnrollmentHandler
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly EnrollmentCardCache _cardCache;
 
-    public GetEnrollmentService(IUnitOfWork unitOfWork, EnrollmentCardCache cardCache)
+    public GetEnrollmentHandler(IUnitOfWork unitOfWork, EnrollmentCardCache cardCache)
     {
         _unitOfWork = unitOfWork;
         _cardCache = cardCache;

@@ -3,11 +3,11 @@ using DataAccessLayer.UnitOfWork;
 
 namespace BusinessLayer.Features.Schedule;
 
-public sealed class GetScheduleService
+public sealed class GetScheduleHandler
 {
     private readonly IUnitOfWork _unitOfWork;
 
-    public GetScheduleService(IUnitOfWork unitOfWork)
+    public GetScheduleHandler(IUnitOfWork unitOfWork)
     {
         _unitOfWork = unitOfWork;
     }

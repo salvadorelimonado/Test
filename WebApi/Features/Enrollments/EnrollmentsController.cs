@@ -22,27 +22,27 @@ namespace WebApi.Features.Enrollments;
 [Route("enrollments")]
 public class EnrollmentsController : BaseApiController
 {
-    private readonly CreateEnrollmentService _createEnrollmentService;
-    private readonly ChangeSeatsService _changeSeatsService;
-    private readonly CancelEnrollmentService _cancelEnrollmentService;
-    private readonly GetEnrollmentService _getEnrollmentService;
-    private readonly JoinWaitlistService _joinWaitlistService;
-    private readonly LeaveWaitlistService _leaveWaitlistService;
+    private readonly CreateEnrollmentHandler _createEnrollmentHandler;
+    private readonly ChangeSeatsHandler _changeSeatsHandler;
+    private readonly CancelEnrollmentHandler _cancelEnrollmentHandler;
+    private readonly GetEnrollmentHandler _getEnrollmentHandler;
+    private readonly JoinWaitlistHandler _joinWaitlistHandler;
+    private readonly LeaveWaitlistHandler _leaveWaitlistHandler;
 
     public EnrollmentsController(
-        CreateEnrollmentService createEnrollmentService,
-        ChangeSeatsService changeSeatsService,
-        CancelEnrollmentService cancelEnrollmentService,
-        GetEnrollmentService getEnrollmentService,
-        JoinWaitlistService joinWaitlistService,
-        LeaveWaitlistService leaveWaitlistService)
+        CreateEnrollmentHandler createEnrollmentHandler,
+        ChangeSeatsHandler changeSeatsHandler,
+        CancelEnrollmentHandler cancelEnrollmentHandler,
+        GetEnrollmentHandler getEnrollmentHandler,
+        JoinWaitlistHandler joinWaitlistHandler,
+        LeaveWaitlistHandler leaveWaitlistHandler)
     {
-        _createEnrollmentService = createEnrollmentService;
-        _changeSeatsService = changeSeatsService;
-        _cancelEnrollmentService = cancelEnrollmentService;
-        _getEnrollmentService = getEnrollmentService;
-        _joinWaitlistService = joinWaitlistService;
-        _leaveWaitlistService = leaveWaitlistService;
+        _createEnrollmentHandler = createEnrollmentHandler;
+        _changeSeatsHandler = changeSeatsHandler;
+        _cancelEnrollmentHandler = cancelEnrollmentHandler;
+        _getEnrollmentHandler = getEnrollmentHandler;
+        _joinWaitlistHandler = joinWaitlistHandler;
+        _leaveWaitlistHandler = leaveWaitlistHandler;
     }
 
     [HttpPost]
@@ -68,7 +68,7 @@ public class EnrollmentsController : BaseApiController
             Seats = request.Seats,
             IdempotencyKey = idempotencyKey
         };
-        var result = await _createEnrollmentService.CreateAsync(command, ct);
+        var result = await _createEnrollmentHandler.CreateAsync(command, ct);
         return result.Select(EnrollmentMapper.ToResponse).ToActionResult(StatusCodes.Status201Created);
     }
 
@@ -95,7 +95,7 @@ public class EnrollmentsController : BaseApiController
             Seats = request.Seats,
             IdempotencyKey = idempotencyKey
         };
-        var result = await _joinWaitlistService.JoinAsync(command, ct);
+        var result = await _joinWaitlistHandler.JoinAsync(command, ct);
         return result.Select(EnrollmentMapper.ToResponse).ToActionResult(StatusCodes.Status201Created);
     }
 
@@ -107,7 +107,7 @@ public class EnrollmentsController : BaseApiController
             UserId = CurrentUserId,
             EntryId = id
         };
-        var result = await _leaveWaitlistService.LeaveAsync(command, ct);
+        var result = await _leaveWaitlistHandler.LeaveAsync(command, ct);
         return result.Select(EnrollmentMapper.ToResponse).ToActionResult(StatusCodes.Status200OK);
     }
 
@@ -127,7 +127,7 @@ public class EnrollmentsController : BaseApiController
             EnrollmentId = id,
             Seats = request.Seats
         };
-        var result = await _changeSeatsService.ChangeAsync(command, ct);
+        var result = await _changeSeatsHandler.ChangeAsync(command, ct);
         return result.Select(EnrollmentMapper.ToResponse).ToActionResult(StatusCodes.Status200OK);
     }
 
@@ -139,7 +139,7 @@ public class EnrollmentsController : BaseApiController
             UserId = CurrentUserId,
             EnrollmentId = id
         };
-        var result = await _cancelEnrollmentService.CancelAsync(command, ct);
+        var result = await _cancelEnrollmentHandler.CancelAsync(command, ct);
         return result.Select(EnrollmentMapper.ToResponse).ToActionResult(StatusCodes.Status200OK);
     }
 
@@ -151,7 +151,7 @@ public class EnrollmentsController : BaseApiController
             UserId = CurrentUserId,
             EnrollmentId = id
         };
-        var result = await _getEnrollmentService.GetAsync(query, ct);
+        var result = await _getEnrollmentHandler.GetAsync(query, ct);
         return result.Select(EnrollmentMapper.ToResponse).ToActionResult(StatusCodes.Status200OK);
     }
 }

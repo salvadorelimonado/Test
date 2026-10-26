@@ -10,22 +10,25 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BusinessLayer.Features.Enrollments.Create;
 
-public sealed class CreateEnrollmentService
+public sealed class CreateEnrollmentHandler
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly TimeProvider _clock;
     private readonly IdempotencyService _idempotency;
+    private readonly WaitlistPromotionService _waitlistPromotion;
     private readonly EnrollmentCardCache _cardCache;
 
-    public CreateEnrollmentService(
+    public CreateEnrollmentHandler(
         IUnitOfWork unitOfWork,
         TimeProvider clock,
         IdempotencyService idempotency,
+        WaitlistPromotionService waitlistPromotion,
         EnrollmentCardCache cardCache)
     {
         _unitOfWork = unitOfWork;
         _clock = clock;
         _idempotency = idempotency;
+        _waitlistPromotion = waitlistPromotion;
         _cardCache = cardCache;
     }
 
@@ -95,7 +98,7 @@ public sealed class CreateEnrollmentService
                 ct);
         }
 
-        return new BookingAttempt(booked.Result, booked.Promotion.PromotedUserIds);
+        return new BookingAttempt(booked.Result, booked.PromotedUserIds);
     }
 
     private Task<OperationResult<CreatedEnrollment>?> FindAsync(
@@ -147,42 +150,34 @@ public sealed class CreateEnrollmentService
 
         // решение: сначала догоняем очередь, потом проверяем абонемент и места уже после неё.
         // Отказ откатывает продвижение: неудавшаяся запись не сдвигает места и посещения.
-        var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(command.ClassId, ct);
-        var freeSeats = scheduledClass.Capacity - takenSeats;
-        var waiting = await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(command.ClassId, ct);
-        var others = WaitlistFillResult.ExceptOwnRequest(waiting, command.UserId);
-        var passes = await _unitOfWork.Pass.GetByUsersForUpdateAsync(
-            WaitlistFillResult.PassIdsToLock(others, command.UserId),
+        var promotedUserIds = await _waitlistPromotion.PromoteAsync(
+            scheduledClass,
+            now,
+            command.UserId,
+            command.UserId,
             ct);
-        var pass = WaitlistFillResult.Require(passes, command.UserId);
-        var promotion = WaitlistFillResult.Fill(scheduledClass, others, passes, freeSeats, now);
-        if (promotion.Changed)
+        var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(command.UserId, ct);
+        if (pass is null)
         {
-            await _unitOfWork.SaveChangesAsync(ct);
+            throw new InvalidOperationException("Pass was not found.");
         }
 
-        takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(command.ClassId, ct);
-        freeSeats = scheduledClass.Capacity - takenSeats;
+        var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(command.ClassId, ct);
+        var freeSeats = scheduledClass.Capacity - takenSeats;
         var today = DateOnly.FromDateTime(now);
         if (pass.ValidUntil < today)
         {
-            return new BookedEnrollment(
-                new OperationResult<CreatedEnrollment>.Conflict(ConflictReason.PassExpired),
-                promotion);
+            return BookedEnrollment.Stop(new OperationResult<CreatedEnrollment>.Conflict(ConflictReason.PassExpired));
         }
 
         if (pass.RemainingVisits < command.Seats)
         {
-            return new BookedEnrollment(
-                new OperationResult<CreatedEnrollment>.Conflict(ConflictReason.PassExhausted),
-                promotion);
+            return BookedEnrollment.Stop(new OperationResult<CreatedEnrollment>.Conflict(ConflictReason.PassExhausted));
         }
 
         if (freeSeats < command.Seats)
         {
-            return new BookedEnrollment(
-                new OperationResult<CreatedEnrollment>.Conflict(ConflictReason.CapacityExceeded),
-                promotion);
+            return BookedEnrollment.Stop(new OperationResult<CreatedEnrollment>.Conflict(ConflictReason.CapacityExceeded));
         }
 
         var enrollment = new Enrollment
@@ -207,18 +202,20 @@ public sealed class CreateEnrollmentService
             CreatedAt = now
         };
 
-        return new BookedEnrollment(new OperationResult<CreatedEnrollment>.Ok(response), promotion);
+        return new BookedEnrollment(new OperationResult<CreatedEnrollment>.Ok(response), promotedUserIds);
     }
 
     private sealed record BookingAttempt(
         OperationResult<CreatedEnrollment> Result,
         IReadOnlyList<long> PromotedUserIds);
 
-    private sealed record BookedEnrollment(OperationResult<CreatedEnrollment> Result, WaitlistFillResult Promotion)
+    private sealed record BookedEnrollment(
+        OperationResult<CreatedEnrollment> Result,
+        IReadOnlyList<long> PromotedUserIds)
     {
         public static BookedEnrollment Stop(OperationResult<CreatedEnrollment> result)
         {
-            return new BookedEnrollment(result, WaitlistFillResult.None);
+            return new BookedEnrollment(result, []);
         }
     }
 

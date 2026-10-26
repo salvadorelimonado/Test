@@ -1,30 +1,43 @@
 using DataAccessLayer.Entities;
+using DataAccessLayer.UnitOfWork;
 
 namespace BusinessLayer.Features.Enrollments.Waitlist;
 
-public sealed class WaitlistFillResult
+public sealed class WaitlistPromotionService
 {
-    public static WaitlistFillResult None { get; } = new([], false);
+    private readonly IUnitOfWork _unitOfWork;
 
-    public WaitlistFillResult(IReadOnlyList<long> promotedUserIds, bool changed)
+    public WaitlistPromotionService(IUnitOfWork unitOfWork)
     {
-        PromotedUserIds = promotedUserIds;
-        Changed = changed;
+        _unitOfWork = unitOfWork;
     }
 
-    public IReadOnlyList<long> PromotedUserIds { get; }
-
-    public bool Changed { get; }
-
-    public static IReadOnlyList<long> InLockOrder(IReadOnlyList<long> queueUserIds, long ownerUserId)
+    public async Task<IReadOnlyList<long>> PromoteAsync(
+        Class scheduledClass,
+        DateTime now,
+        long? includeUserId,
+        long? excludeUserId,
+        CancellationToken ct)
     {
-        var userIds = new List<long>(queueUserIds.Count + 1);
-        userIds.AddRange(queueUserIds);
-        userIds.Add(ownerUserId);
-        return userIds.Distinct().OrderBy(id => id).ToList();
+        var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(scheduledClass.Id, ct);
+        var freeSeats = scheduledClass.Capacity - takenSeats;
+        var waiting = await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct);
+        if (excludeUserId is long excludedUserId)
+        {
+            waiting = ExceptOwnRequest(waiting, excludedUserId);
+        }
+
+        var passes = await _unitOfWork.Pass.GetByUsersForUpdateAsync(PassIdsToLock(waiting, includeUserId), ct);
+        var filled = Fill(scheduledClass, waiting, passes, freeSeats, now);
+        if (filled.Changed)
+        {
+            await _unitOfWork.SaveChangesAsync(ct);
+        }
+
+        return filled.PromotedUserIds;
     }
 
-    public static List<WaitlistEntry> CancelOwnRequest(IReadOnlyList<WaitlistEntry> waiting, long userId)
+    internal static List<WaitlistEntry> CancelOwnRequest(IReadOnlyList<WaitlistEntry> waiting, long userId)
     {
         // решение: свою заявку на это занятие снимаем до продвижения, иначе клиент
         // сразу получит вторую бронь на места, которые только что освободил.
@@ -39,52 +52,14 @@ public sealed class WaitlistFillResult
         return waiting.Where(entry => entry.Status == WaitlistStatus.Waiting).ToList();
     }
 
-    public static List<WaitlistEntry> ExceptOwnRequest(IReadOnlyList<WaitlistEntry> waiting, long userId)
+    internal static List<WaitlistEntry> ExceptOwnRequest(IReadOnlyList<WaitlistEntry> waiting, long userId)
     {
         // решение: при записи и увеличении мест свою заявку не продвигаем и не снимаем.
         // Контракт разрешает ждать ещё места при уже активной брони.
         return waiting.Where(entry => entry.UserId != userId).ToList();
     }
 
-    public static IReadOnlyList<long> PassIdsToLock(
-        IReadOnlyList<WaitlistEntry> waiting,
-        long? includeUserId)
-    {
-        var queueUserIds = waiting.Select(entry => entry.UserId).ToList();
-        if (includeUserId is long userId)
-        {
-            return InLockOrder(queueUserIds, userId);
-        }
-
-        return queueUserIds.Distinct().OrderBy(id => id).ToList();
-    }
-
-    public static Pass Require(IReadOnlyDictionary<long, Pass> passes, long userId)
-    {
-        if (!passes.TryGetValue(userId, out var pass))
-        {
-            throw new InvalidOperationException("Pass was not found.");
-        }
-
-        return pass;
-    }
-
-    public static WaitlistFillResult TryFill(
-        Class scheduledClass,
-        IReadOnlyList<WaitlistEntry> waiting,
-        IReadOnlyDictionary<long, Pass> passes,
-        int freeSeats,
-        DateTime now)
-    {
-        if (waiting.Count == 0)
-        {
-            return None;
-        }
-
-        return Fill(scheduledClass, waiting, passes, freeSeats, now);
-    }
-
-    public static WaitlistFillResult Fill(
+    internal static (IReadOnlyList<long> PromotedUserIds, bool Changed) Fill(
         Class scheduledClass,
         IReadOnlyList<WaitlistEntry> waiting,
         IReadOnlyDictionary<long, Pass> passes,
@@ -104,8 +79,8 @@ public sealed class WaitlistFillResult
 
             if (pass.ValidUntil < today || pass.RemainingVisits < entry.Seats)
             {
-                // решение: недействующий абонемент снимаем с очереди сразу, даже если мест пока не хватает.
-                // Иначе заявка сдвигает position у всех за ней. Если абонемент продлят вне API, место в очереди уже потеряно.
+                // решение: заявку снимаем, как только посещений не хватает или истёк срок, даже если мест пока нет.
+                // Позже вернуть посещения уже не восстановит место в очереди.
                 entry.Status = WaitlistStatus.Skipped;
                 changed = true;
                 continue;
@@ -133,6 +108,17 @@ public sealed class WaitlistFillResult
             changed = true;
         }
 
-        return new WaitlistFillResult(promotedUserIds, changed);
+        return (promotedUserIds, changed);
+    }
+
+    private static List<long> PassIdsToLock(IReadOnlyList<WaitlistEntry> waiting, long? includeUserId)
+    {
+        var userIds = waiting.Select(entry => entry.UserId).Distinct().ToList();
+        if (includeUserId is long userId && !userIds.Contains(userId))
+        {
+            userIds.Add(userId);
+        }
+
+        return userIds;
     }
 }

@@ -9,22 +9,25 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BusinessLayer.Features.Enrollments.Waitlist;
 
-public sealed class JoinWaitlistService
+public sealed class JoinWaitlistHandler
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly TimeProvider _clock;
     private readonly IdempotencyService _idempotency;
+    private readonly WaitlistPromotionService _waitlistPromotion;
     private readonly EnrollmentCardCache _cardCache;
 
-    public JoinWaitlistService(
+    public JoinWaitlistHandler(
         IUnitOfWork unitOfWork,
         TimeProvider clock,
         IdempotencyService idempotency,
+        WaitlistPromotionService waitlistPromotion,
         EnrollmentCardCache cardCache)
     {
         _unitOfWork = unitOfWork;
         _clock = clock;
         _idempotency = idempotency;
+        _waitlistPromotion = waitlistPromotion;
         _cardCache = cardCache;
     }
 
@@ -150,15 +153,13 @@ public sealed class JoinWaitlistService
             return JoinAttempt.Stop(new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.ExceedsCapacity));
         }
 
-        var promotion = await PromoteWaitingAsync(scheduledClass, now, command.UserId, ct);
+        var promotedUserIds = await _waitlistPromotion.PromoteAsync(scheduledClass, now, command.UserId, null, ct);
         var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(command.ClassId, ct);
         var freeSeats = scheduledClass.Capacity - takenSeats;
         if (freeSeats >= command.Seats)
         {
             // решение: в очередь встают только когда свободных мест меньше, чем запрошено.
-            return new JoinAttempt(
-                new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.SeatsAvailable),
-                promotion.PromotedUserIds);
+            return JoinAttempt.Stop(new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.SeatsAvailable));
         }
 
         var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(command.UserId, ct);
@@ -170,16 +171,12 @@ public sealed class JoinWaitlistService
         var today = DateOnly.FromDateTime(now);
         if (pass.ValidUntil < today)
         {
-            return new JoinAttempt(
-                new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.PassExpired),
-                promotion.PromotedUserIds);
+            return JoinAttempt.Stop(new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.PassExpired));
         }
 
         if (pass.RemainingVisits < command.Seats)
         {
-            return new JoinAttempt(
-                new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.PassExhausted),
-                promotion.PromotedUserIds);
+            return JoinAttempt.Stop(new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.PassExhausted));
         }
 
         var entry = new WaitlistEntry
@@ -208,38 +205,7 @@ public sealed class JoinWaitlistService
                 Position = position,
                 CreatedAt = entry.CreatedAt
             }),
-            promotion.PromotedUserIds);
-    }
-
-    private async Task<WaitlistFillResult> PromoteWaitingAsync(
-        Class scheduledClass,
-        DateTime now,
-        long joinerUserId,
-        CancellationToken ct)
-    {
-        if (scheduledClass.IsCancelled)
-        {
-            return WaitlistFillResult.None;
-        }
-
-        var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(scheduledClass.Id, ct);
-        var freeSeats = scheduledClass.Capacity - takenSeats;
-        var waiting = await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct);
-        if (waiting.Count == 0)
-        {
-            return WaitlistFillResult.None;
-        }
-
-        var passes = await _unitOfWork.Pass.GetByUsersForUpdateAsync(
-            WaitlistFillResult.PassIdsToLock(waiting, joinerUserId),
-            ct);
-        var result = WaitlistFillResult.Fill(scheduledClass, waiting, passes, freeSeats, now);
-        if (result.Changed)
-        {
-            await _unitOfWork.SaveChangesAsync(ct);
-        }
-
-        return result;
+            promotedUserIds);
     }
 
     private sealed record JoinAttempt(

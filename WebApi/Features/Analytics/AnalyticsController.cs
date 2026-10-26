@@ -13,11 +13,11 @@ namespace WebApi.Features.Analytics;
 [Route("analytics")]
 public class AnalyticsController : BaseApiController
 {
-    private readonly GetLoadService _getLoadService;
+    private readonly GetLoadHandler _getLoadHandler;
 
-    public AnalyticsController(GetLoadService getLoadService)
+    public AnalyticsController(GetLoadHandler getLoadHandler)
     {
-        _getLoadService = getLoadService;
+        _getLoadHandler = getLoadHandler;
     }
 
     [HttpGet("load")]
@@ -26,7 +26,7 @@ public class AnalyticsController : BaseApiController
         var from = request.From ?? throw new ArgumentNullException(nameof(request.From));
         var to = request.To ?? throw new ArgumentNullException(nameof(request.To));
 
-        var rows = await _getLoadService.GetAsync(
+        var rows = await _getLoadHandler.GetAsync(
             new GetLoadQuery
             {
                 From = from,

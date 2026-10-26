@@ -5,7 +5,7 @@ using Shouldly;
 namespace BusinessLayer.Tests;
 
 [TestClass]
-public class WaitlistFillResultTests
+public class WaitlistPromotionServiceTests
 {
     [TestMethod]
     public void Fill_WhenTheHeadNeedsMoreSeatsThanAreFree_PromotesTheNextWhoFits()
@@ -26,7 +26,7 @@ public class WaitlistFillResultTests
         var passes = Passes(validUntil, (headUserId, visits), (behindUserId, visits));
 
         // Act
-        var result = WaitlistFillResult.Fill(scheduledClass, [head, behind], passes, freeSeats, now);
+        var result = WaitlistPromotionService.Fill(scheduledClass, [head, behind], passes, freeSeats, now);
 
         // Assert
         result.Changed.ShouldBeTrue();
@@ -57,7 +57,7 @@ public class WaitlistFillResultTests
         var passes = Passes(validUntil, (headUserId, headVisits), (nextUserId, nextVisits));
 
         // Act
-        var result = WaitlistFillResult.Fill(scheduledClass, [head, next], passes, freeSeats, now);
+        var result = WaitlistPromotionService.Fill(scheduledClass, [head, next], passes, freeSeats, now);
 
         // Assert
         result.Changed.ShouldBeTrue();
@@ -92,7 +92,7 @@ public class WaitlistFillResultTests
         };
 
         // Act
-        var result = WaitlistFillResult.Fill(scheduledClass, [head, next], passes, freeSeats, now);
+        var result = WaitlistPromotionService.Fill(scheduledClass, [head, next], passes, freeSeats, now);
 
         // Assert
         result.Changed.ShouldBeTrue();
@@ -114,7 +114,7 @@ public class WaitlistFillResultTests
         var next = Waiting(nextUserId, nextSeats, now.AddMinutes(-5));
 
         // Act
-        var stillWaiting = WaitlistFillResult.CancelOwnRequest([own, next], ownerUserId);
+        var stillWaiting = WaitlistPromotionService.CancelOwnRequest([own, next], ownerUserId);
 
         // Assert
         own.Status.ShouldBe(WaitlistStatus.Cancelled);
@@ -135,33 +135,11 @@ public class WaitlistFillResultTests
         var next = Waiting(nextUserId, nextSeats, now.AddMinutes(-5));
 
         // Act
-        var others = WaitlistFillResult.ExceptOwnRequest([own, next], ownerUserId);
+        var others = WaitlistPromotionService.ExceptOwnRequest([own, next], ownerUserId);
 
         // Assert
         own.Status.ShouldBe(WaitlistStatus.Waiting);
         others.ShouldBe([next]);
-    }
-
-    [TestMethod]
-    public void PassIdsToLock_SortsTheOwnerTogetherWithTheQueue()
-    {
-        // Arrange
-        var ownerUserId = 50L;
-        var earlierUserId = 15L;
-        var oversizedUserId = 40L;
-        var laterUserId = 70L;
-        var requestedSeats = 1;
-        var oversizedSeats = 4;
-        var now = new DateTime(2032, 6, 4, 9, 0, 0, DateTimeKind.Utc);
-        var earlier = Waiting(earlierUserId, requestedSeats, now.AddMinutes(-10));
-        var oversized = Waiting(oversizedUserId, oversizedSeats, now.AddMinutes(-7));
-        var later = Waiting(laterUserId, requestedSeats, now.AddMinutes(-5));
-
-        // Act
-        var lockIds = WaitlistFillResult.PassIdsToLock([earlier, oversized, later], ownerUserId);
-
-        // Assert
-        lockIds.ShouldBe([earlierUserId, oversizedUserId, ownerUserId, laterUserId]);
     }
 
     private static WaitlistEntry Waiting(long userId, int seats, DateTime createdAt)

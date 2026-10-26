@@ -3,11 +3,11 @@ using DataAccessLayer.UnitOfWork;
 
 namespace BusinessLayer.Features.Analytics;
 
-public sealed class GetLoadService
+public sealed class GetLoadHandler
 {
     private readonly IUnitOfWork _unitOfWork;
 
-    public GetLoadService(IUnitOfWork unitOfWork)
+    public GetLoadHandler(IUnitOfWork unitOfWork)
     {
         _unitOfWork = unitOfWork;
     }

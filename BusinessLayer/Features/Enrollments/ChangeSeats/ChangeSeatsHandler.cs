@@ -8,16 +8,22 @@ using DataAccessLayer.UnitOfWork;
 
 namespace BusinessLayer.Features.Enrollments.ChangeSeats;
 
-public sealed class ChangeSeatsService
+public sealed class ChangeSeatsHandler
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly TimeProvider _clock;
+    private readonly WaitlistPromotionService _waitlistPromotion;
     private readonly EnrollmentCardCache _cardCache;
 
-    public ChangeSeatsService(IUnitOfWork unitOfWork, TimeProvider clock, EnrollmentCardCache cardCache)
+    public ChangeSeatsHandler(
+        IUnitOfWork unitOfWork,
+        TimeProvider clock,
+        WaitlistPromotionService waitlistPromotion,
+        EnrollmentCardCache cardCache)
     {
         _unitOfWork = unitOfWork;
         _clock = clock;
+        _waitlistPromotion = waitlistPromotion;
         _cardCache = cardCache;
     }
 
@@ -85,22 +91,20 @@ public sealed class ChangeSeatsService
         {
             // решение: сначала догоняем очередь, потом проверяем абонемент и места уже после неё.
             // Отказ откатывает продвижение: неудавшееся увеличение не сдвигает места и посещения.
-            var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(scheduledClass.Id, ct);
-            var freeSeats = scheduledClass.Capacity - takenSeats;
-            var waiting = await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct);
-            var others = WaitlistFillResult.ExceptOwnRequest(waiting, command.UserId);
-            var passes = await _unitOfWork.Pass.GetByUsersForUpdateAsync(
-                WaitlistFillResult.PassIdsToLock(others, command.UserId),
+            var promoted = await _waitlistPromotion.PromoteAsync(
+                scheduledClass,
+                now,
+                command.UserId,
+                command.UserId,
                 ct);
-            var pass = WaitlistFillResult.Require(passes, command.UserId);
-            var promotion = WaitlistFillResult.Fill(scheduledClass, others, passes, freeSeats, now);
-            if (promotion.Changed)
+            var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(command.UserId, ct);
+            if (pass is null)
             {
-                await _unitOfWork.SaveChangesAsync(ct);
+                throw new InvalidOperationException("Pass was not found.");
             }
 
-            takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(scheduledClass.Id, ct);
-            freeSeats = scheduledClass.Capacity - takenSeats;
+            var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(scheduledClass.Id, ct);
+            var freeSeats = scheduledClass.Capacity - takenSeats;
             var today = DateOnly.FromDateTime(now);
             if (pass.ValidUntil < today)
             {
@@ -117,7 +121,7 @@ public sealed class ChangeSeatsService
                 return Failed(new OperationResult<EnrollmentCardRow>.Conflict(ConflictReason.CapacityExceeded));
             }
 
-            promotedUserIds.AddRange(promotion.PromotedUserIds);
+            promotedUserIds.AddRange(promoted);
             enrollment.Seats = command.Seats;
             pass.RemainingVisits -= delta;
             await _unitOfWork.SaveChangesAsync(ct);
@@ -146,26 +150,26 @@ public sealed class ChangeSeatsService
         DateTime now,
         CancellationToken ct)
     {
-        var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(scheduledClass.Id, ct);
-        var freeNow = scheduledClass.Capacity - takenSeats;
-        // решение: уменьшение возвращает посещения в любой момент до начала, в том числе менее чем за два часа.
-        var freeSeats = freeNow - delta;
         var waiting = await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct);
-        var stillWaiting = WaitlistFillResult.CancelOwnRequest(waiting, enrollment.UserId);
-        var passes = await _unitOfWork.Pass.GetByUsersForUpdateAsync(
-            WaitlistFillResult.PassIdsToLock(stillWaiting, enrollment.UserId),
-            ct);
-        var pass = WaitlistFillResult.Require(passes, enrollment.UserId);
+        WaitlistPromotionService.CancelOwnRequest(waiting, enrollment.UserId);
         enrollment.Seats = seats;
-        pass.RemainingVisits -= delta;
         await _unitOfWork.SaveChangesAsync(ct);
-        var promotion = WaitlistFillResult.TryFill(scheduledClass, stillWaiting, passes, freeSeats, now);
-        if (promotion.Changed)
+        var promotedUserIds = await _waitlistPromotion.PromoteAsync(
+            scheduledClass,
+            now,
+            enrollment.UserId,
+            null,
+            ct);
+        var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(enrollment.UserId, ct);
+        if (pass is null)
         {
-            await _unitOfWork.SaveChangesAsync(ct);
+            throw new InvalidOperationException("Pass was not found.");
         }
 
-        return promotion.PromotedUserIds;
+        // решение: уменьшение возвращает посещения в любой момент до начала, в том числе менее чем за два часа.
+        pass.RemainingVisits -= delta;
+        await _unitOfWork.SaveChangesAsync(ct);
+        return promotedUserIds;
     }
 
     private async Task<EnrollmentCardRow> CardAsync(long enrollmentId, long userId, CancellationToken ct)
