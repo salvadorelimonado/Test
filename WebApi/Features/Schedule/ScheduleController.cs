@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using BusinessLayer.Features.Schedule;
 using WebApi.Controllers;
-using WebApi.Helpers;
 using WebApi.RateLimiting;
 
 namespace WebApi.Features.Schedule;
@@ -24,41 +23,16 @@ public class ScheduleController : BaseApiController
     [HttpGet]
     public async Task<IActionResult> Get([FromQuery] GetScheduleRequest request, CancellationToken ct)
     {
-        if (!TryGetCurrentUserId(out var userId))
-        {
-            return Unauthorized();
-        }
-
-        if (request.From is not DateTime from || request.To is not DateTime to || to <= from)
-        {
-            return ApiProblemsHelper.Create(StatusCodes.Status400BadRequest);
-        }
-
-        var limit = request.Limit ?? SchedulePaginationLimits.DefaultPageSize;
-        if (limit < SchedulePaginationLimits.MinPageSize || limit > SchedulePaginationLimits.MaxPageSize)
-        {
-            return ApiProblemsHelper.Create(StatusCodes.Status400BadRequest);
-        }
-
-        ScheduleCursor? cursor = null;
-        if (!string.IsNullOrWhiteSpace(request.ContinuationToken))
-        {
-            if (!ScheduleContinuation.TryRead(request.ContinuationToken, out var cursorStartsAt, out var cursorClassId))
-            {
-                return ApiProblemsHelper.Create(StatusCodes.Status400BadRequest);
-            }
-
-            cursor = new ScheduleCursor(cursorStartsAt, cursorClassId);
-        }
-
+        var from = request.From ?? throw new ArgumentNullException(nameof(request.From));
+        var to = request.To ?? throw new ArgumentNullException(nameof(request.To));
         var query = new GetScheduleQuery
         {
-            UserId = userId,
+            UserId = CurrentUserId,
             From = from,
             To = to,
             RoomId = request.RoomId,
-            Limit = limit,
-            Cursor = cursor
+            Limit = request.Limit ?? SchedulePaginationLimits.DefaultPageSize,
+            Cursor = request.Cursor
         };
         var page = await _getScheduleService.GetAsync(query, ct);
         return Ok(page);

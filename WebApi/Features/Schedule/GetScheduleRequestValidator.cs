@@ -1,5 +1,4 @@
 using FluentValidation;
-using BusinessLayer.Features.Schedule;
 
 namespace WebApi.Features.Schedule;
 
@@ -15,7 +14,7 @@ public sealed class GetScheduleRequestValidator : AbstractValidator<GetScheduleR
         RuleFor(request => request.Limit)
             .Must(limit => limit is null || (limit >= SchedulePaginationLimits.MinPageSize && limit <= SchedulePaginationLimits.MaxPageSize));
         RuleFor(request => request.ContinuationToken)
-            .Must(token => string.IsNullOrWhiteSpace(token) || ScheduleContinuation.TryRead(token, out _, out _));
+            .Must((request, token) => string.IsNullOrWhiteSpace(token) || request.Cursor is not null);
     }
 
     private static bool IsAfterFrom(DateTime? from, DateTime? to)
