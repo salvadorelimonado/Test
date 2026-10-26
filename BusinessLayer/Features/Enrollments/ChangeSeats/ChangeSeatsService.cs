@@ -1,3 +1,4 @@
+using BusinessLayer.Extensions;
 using BusinessLayer.Features.Enrollments;
 using BusinessLayer.Result;
 using DataAccessLayer.Entities;
@@ -71,7 +72,7 @@ public sealed class ChangeSeatsService
             return Failed(new OperationResult<EnrollmentCard>.Conflict(EnrollmentConflictConstants.ClassCancelled));
         }
 
-        var now = TruncateToMicroseconds(_clock.GetUtcNow().UtcDateTime);
+        var now = _clock.TruncateToMicroseconds();
         if (now >= scheduledClass.StartsAt)
         {
             return Failed(new OperationResult<EnrollmentCard>.Conflict(EnrollmentConflictConstants.ClassStarted));
@@ -255,11 +256,5 @@ public sealed class ChangeSeatsService
         }
 
         return EnrollmentCard.Create(enrollment, scheduledClass, room, pass);
-    }
-
-    private static DateTime TruncateToMicroseconds(DateTime value)
-    {
-        var ticks = value.Ticks - value.Ticks % 10;
-        return new DateTime(ticks, DateTimeKind.Utc);
     }
 }

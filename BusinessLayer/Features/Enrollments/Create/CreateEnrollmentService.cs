@@ -1,4 +1,5 @@
-using System.Globalization;
+﻿using System.Globalization;
+using BusinessLayer.Extensions;
 using BusinessLayer.Features.Enrollments;
 using BusinessLayer.Idempotency;
 using BusinessLayer.Result;
@@ -71,7 +72,7 @@ public sealed class CreateEnrollmentService
                 command.UserId,
                 IdempotencyOperation.Enroll,
                 command.IdempotencyKey,
-                CanonicalRequest(command.ClassId, command.Seats),
+                IdempotencyService.CanonicalRequest(command.ClassId, command.Seats),
                 ok.Value,
                 ct);
         }
@@ -87,7 +88,7 @@ public sealed class CreateEnrollmentService
             command.UserId,
             IdempotencyOperation.Enroll,
             command.IdempotencyKey,
-            CanonicalRequest(command.ClassId, command.Seats),
+            IdempotencyService.CanonicalRequest(command.ClassId, command.Seats),
             EnrollmentConflictConstants.IdempotencyMismatch,
             ct);
     }
@@ -121,7 +122,7 @@ public sealed class CreateEnrollmentService
             return new OperationResult<CreateEnrollmentResponse>.Conflict(EnrollmentConflictConstants.ClassCancelled);
         }
 
-        var now = TruncateToMicroseconds(_clock.GetUtcNow().UtcDateTime);
+        var now = _clock.TruncateToMicroseconds();
         if (now >= scheduledClass.StartsAt)
         {
             return new OperationResult<CreateEnrollmentResponse>.Conflict(EnrollmentConflictConstants.ClassStarted);
@@ -182,14 +183,4 @@ public sealed class CreateEnrollmentService
         return new OperationResult<CreateEnrollmentResponse>.Ok(response);
     }
 
-    private static string CanonicalRequest(long classId, int seats)
-    {
-        return string.Create(CultureInfo.InvariantCulture, $"{classId}:{seats}");
-    }
-
-    private static DateTime TruncateToMicroseconds(DateTime value)
-    {
-        var ticks = value.Ticks - value.Ticks % 10;
-        return new DateTime(ticks, DateTimeKind.Utc);
-    }
 }

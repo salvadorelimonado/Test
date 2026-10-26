@@ -1,3 +1,4 @@
+using BusinessLayer.Extensions;
 using BusinessLayer.Features.Enrollments;
 using BusinessLayer.Result;
 using DataAccessLayer.Entities;
@@ -62,7 +63,7 @@ public sealed class CancelEnrollmentService
             return CancelAttempt.Done(new OperationResult<CancelEnrollmentResponse>.Ok(ToResponse(enrollment)), enrollment.UserId);
         }
 
-        var now = TruncateToMicroseconds(_clock.GetUtcNow().UtcDateTime);
+        var now = _clock.TruncateToMicroseconds();
         if (!scheduledClass.IsCancelled && now >= scheduledClass.StartsAt)
         {
             return CancelAttempt.Stop(new OperationResult<CancelEnrollmentResponse>.Conflict(EnrollmentConflictConstants.ClassStarted));
@@ -209,12 +210,6 @@ public sealed class CancelEnrollmentService
             Status = EnrollmentStatusMapping.ToContract(enrollment.Status),
             RefundedVisits = enrollment.RefundedVisits
         };
-    }
-
-    private static DateTime TruncateToMicroseconds(DateTime value)
-    {
-        var ticks = value.Ticks - value.Ticks % 10;
-        return new DateTime(ticks, DateTimeKind.Utc);
     }
 
     private sealed record CancelAttempt(OperationResult<CancelEnrollmentResponse> Result, IReadOnlyList<long> AffectedUserIds)

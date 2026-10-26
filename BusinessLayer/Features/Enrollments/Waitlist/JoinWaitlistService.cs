@@ -1,4 +1,4 @@
-using System.Globalization;
+using BusinessLayer.Extensions;
 using BusinessLayer.Features.Enrollments;
 using BusinessLayer.Idempotency;
 using BusinessLayer.Result;
@@ -57,7 +57,7 @@ public sealed class JoinWaitlistService
                 command.UserId,
                 IdempotencyOperation.Waitlist,
                 command.IdempotencyKey,
-                CanonicalRequest(command.ClassId, command.Seats),
+                IdempotencyService.CanonicalRequest(command.ClassId, command.Seats),
                 ok.Value,
                 ct);
         }
@@ -73,7 +73,7 @@ public sealed class JoinWaitlistService
             command.UserId,
             IdempotencyOperation.Waitlist,
             command.IdempotencyKey,
-            CanonicalRequest(command.ClassId, command.Seats),
+            IdempotencyService.CanonicalRequest(command.ClassId, command.Seats),
             EnrollmentConflictConstants.IdempotencyMismatch,
             ct);
     }
@@ -107,7 +107,7 @@ public sealed class JoinWaitlistService
             return new OperationResult<JoinWaitlistResponse>.Conflict(EnrollmentConflictConstants.ClassCancelled);
         }
 
-        var now = TruncateToMicroseconds(_clock.GetUtcNow().UtcDateTime);
+        var now = _clock.TruncateToMicroseconds();
         if (now >= scheduledClass.StartsAt)
         {
             return new OperationResult<JoinWaitlistResponse>.Conflict(EnrollmentConflictConstants.ClassStarted);
@@ -174,16 +174,5 @@ public sealed class JoinWaitlistService
             Position = position,
             CreatedAt = entry.CreatedAt
         });
-    }
-
-    private static string CanonicalRequest(long classId, int seats)
-    {
-        return string.Create(CultureInfo.InvariantCulture, $"{classId}:{seats}");
-    }
-
-    private static DateTime TruncateToMicroseconds(DateTime value)
-    {
-        var ticks = value.Ticks - value.Ticks % 10;
-        return new DateTime(ticks, DateTimeKind.Utc);
     }
 }
