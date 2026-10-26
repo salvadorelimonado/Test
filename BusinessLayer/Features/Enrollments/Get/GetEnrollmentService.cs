@@ -15,16 +15,26 @@ public sealed class GetEnrollmentService
 
     public async Task<GetEnrollmentResult> GetAsync(GetEnrollmentCommand command, CancellationToken ct)
     {
-        var lookup = await _cardCache.ReadAsync(command.UserId, command.EnrollmentId, ct);
-        if (lookup.Card is not null)
+        var card = await _cardCache.GetOrLoadAsync(
+            command.UserId,
+            command.EnrollmentId,
+            token => LoadAsync(command, token),
+            ct);
+
+        if (card is null)
         {
-            return GetEnrollmentResult.Found(lookup.Card);
+            return GetEnrollmentResult.NotFound();
         }
 
+        return GetEnrollmentResult.Found(card);
+    }
+
+    private async Task<EnrollmentCard?> LoadAsync(GetEnrollmentCommand command, CancellationToken ct)
+    {
         var enrollment = await _unitOfWork.Enrollment.GetByIdAsync(command.EnrollmentId, ct);
         if (enrollment is null || enrollment.UserId != command.UserId)
         {
-            return GetEnrollmentResult.NotFound();
+            return null;
         }
 
         var scheduledClass = await _unitOfWork.Class.GetByIdAsync(enrollment.ClassId, ct);
@@ -45,8 +55,6 @@ public sealed class GetEnrollmentService
             throw new InvalidOperationException("Pass was not found.");
         }
 
-        var card = EnrollmentCard.Create(enrollment, scheduledClass, room, pass);
-        await _cardCache.SetAsync(command.UserId, lookup.Generation, card, ct);
-        return GetEnrollmentResult.Found(card);
+        return EnrollmentCard.Create(enrollment, scheduledClass, room, pass);
     }
 }

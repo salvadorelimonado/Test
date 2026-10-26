@@ -38,7 +38,6 @@ public sealed class UtcDateTimeModelBinder : IModelBinder
             return false;
         }
 
-        // решение: дата без времени — полночь этих суток в UTC.
         if (!DateTimeOffset.TryParseExact(
                 text,
                 Formats,

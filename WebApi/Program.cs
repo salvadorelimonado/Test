@@ -10,6 +10,8 @@ using Microsoft.EntityFrameworkCore;
 using FluentValidation;
 using Microsoft.IdentityModel.Tokens;
 using SharpGrip.FluentValidation.AutoValidation.Mvc.Extensions;
+using Microsoft.Extensions.Caching.Hybrid;
+using Microsoft.Extensions.Caching.StackExchangeRedis;
 using StackExchange.Redis;
 using BusinessLayer.Features.Enrollments;
 using BusinessLayer.Features.Enrollments.Cancel;
@@ -64,6 +66,14 @@ ApiRateLimit.Add(builder.Services);
 
 builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
     ConnectionMultiplexer.Connect(builder.Configuration.GetConnectionString("Redis")!));
+
+builder.Services.AddStackExchangeRedisCache(_ => { });
+builder.Services.AddOptions<RedisCacheOptions>()
+    .Configure<IConnectionMultiplexer>((options, multiplexer) =>
+    {
+        options.ConnectionMultiplexerFactory = () => Task.FromResult(multiplexer);
+    });
+builder.Services.AddHybridCache();
 
 builder.Services.AddSingleton<ICacheService>(provider =>
     new RedisCacheService(provider.GetRequiredService<IConnectionMultiplexer>(), TimeSpan.FromMinutes(5)));
