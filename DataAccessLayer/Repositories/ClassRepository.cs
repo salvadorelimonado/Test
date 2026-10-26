@@ -77,4 +77,74 @@ public class ClassRepository : GenericRepository<Class>, IClassRepository
             .Take(take)
             .ToListAsync(ct);
     }
+
+    public async Task<List<ClassLoadRow>> ListLoadAsync(
+        DateOnly from,
+        DateOnly to,
+        long? roomId,
+        CancellationToken ct = default)
+    {
+        var fromInstant = from.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        var toExclusive = to.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        var query = _dbSet
+            .AsNoTracking()
+            .Where(scheduledClass => !scheduledClass.IsCancelled
+                && scheduledClass.StartsAt >= fromInstant
+                && scheduledClass.StartsAt < toExclusive);
+
+        if (roomId is long selectedRoomId)
+        {
+            query = query.Where(scheduledClass => scheduledClass.RoomId == selectedRoomId);
+        }
+
+        var groups = await query
+            .GroupBy(scheduledClass => new
+            {
+                Day = scheduledClass.StartsAt.Date,
+                scheduledClass.RoomId,
+                RoomName = scheduledClass.Room.Name
+            })
+            .Select(group => new ClassLoadRow
+            {
+                Day = group.Key.Day,
+                RoomId = group.Key.RoomId,
+                RoomName = group.Key.RoomName,
+                ClassesCount = group.Count(),
+                TotalCapacity = group.Sum(scheduledClass => scheduledClass.Capacity)
+            })
+            .ToListAsync(ct);
+
+        var bookedSeats = await query
+            .SelectMany(scheduledClass => scheduledClass.Enrollments)
+            .Where(enrollment => enrollment.Status == EnrollmentStatus.Active)
+            .GroupBy(enrollment => new
+            {
+                Day = enrollment.Class.StartsAt.Date,
+                enrollment.Class.RoomId
+            })
+            .Select(group => new
+            {
+                group.Key.Day,
+                group.Key.RoomId,
+                Seats = group.Sum(enrollment => enrollment.Seats)
+            })
+            .ToListAsync(ct);
+
+        var seatsByDayAndRoom = bookedSeats.ToDictionary(
+            row => (DateOnly.FromDateTime(row.Day), row.RoomId),
+            row => row.Seats);
+
+        foreach (var group in groups)
+        {
+            if (seatsByDayAndRoom.TryGetValue((DateOnly.FromDateTime(group.Day), group.RoomId), out var seats))
+            {
+                group.BookedSeats = seats;
+            }
+        }
+
+        return groups
+            .OrderBy(group => group.Day)
+            .ThenBy(group => group.RoomId)
+            .ToList();
+    }
 }

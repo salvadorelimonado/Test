@@ -18,4 +18,10 @@ public interface IClassRepository : IGenericRepository<Class>
         long? cursorId,
         int take,
         CancellationToken ct = default);
+
+    Task<List<ClassLoadRow>> ListLoadAsync(
+        DateOnly from,
+        DateOnly to,
+        long? roomId,
+        CancellationToken ct = default);
 }
