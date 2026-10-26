@@ -8,4 +8,6 @@ public interface IPassRepository : IGenericRepository<Pass>
     Task<Pass?> GetByUserAsync(long userId, CancellationToken ct = default);
 
     Task<Pass?> GetByUserForUpdateAsync(long userId, CancellationToken ct = default);
+
+    Task<IReadOnlyDictionary<long, Pass>> GetByUsersForUpdateAsync(IReadOnlyList<long> userIds, CancellationToken ct = default);
 }

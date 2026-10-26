@@ -227,8 +227,8 @@ public sealed class JoinWaitlistService
             return WaitlistFillResult.None;
         }
 
-        var passes = await LockPassesAsync(
-            WaitlistFillResult.InLockOrder(WaitlistFillResult.UserIdsWithinFreeSeats(waiting, freeSeats), joinerUserId),
+        var passes = await _unitOfWork.Pass.GetByUsersForUpdateAsync(
+            WaitlistFillResult.PassIdsToLock(waiting, freeSeats, joinerUserId),
             ct);
         var result = WaitlistFillResult.Fill(scheduledClass, waiting, passes, freeSeats, now);
         if (result.Changed)
@@ -237,23 +237,6 @@ public sealed class JoinWaitlistService
         }
 
         return result;
-    }
-
-    private async Task<Dictionary<long, Pass>> LockPassesAsync(IReadOnlyList<long> userIds, CancellationToken ct)
-    {
-        var passes = new Dictionary<long, Pass>();
-        foreach (var userId in userIds)
-        {
-            var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(userId, ct);
-            if (pass is null)
-            {
-                throw new InvalidOperationException("Pass was not found.");
-            }
-
-            passes.Add(userId, pass);
-        }
-
-        return passes;
     }
 
     private sealed record JoinAttempt(

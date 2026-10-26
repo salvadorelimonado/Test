@@ -72,7 +72,11 @@ public sealed class CancelEnrollmentService
 
         if (scheduledClass.IsCancelled)
         {
-            var clubPass = await LockPassAsync(enrollment.UserId, ct);
+            var clubPass = await _unitOfWork.Pass.GetByUserForUpdateAsync(enrollment.UserId, ct);
+            if (clubPass is null)
+            {
+                throw new InvalidOperationException("Pass was not found.");
+            }
             var clubRefund = Refund(scheduledClass, enrollment, clubPass, now);
             enrollment.Status = EnrollmentStatus.Cancelled;
             enrollment.CancelledAt = now;
@@ -81,36 +85,20 @@ public sealed class CancelEnrollmentService
             return CancelAttempt.Done(new OperationResult<CancelledEnrollment>.Ok(ToResponse(enrollment)), enrollment.UserId);
         }
 
-        var waiting = await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct);
-        foreach (var entry in waiting)
-        {
-            if (entry.UserId == enrollment.UserId)
-            {
-                entry.Status = WaitlistStatus.Cancelled;
-            }
-        }
-
-        var stillWaiting = waiting.Where(entry => entry.Status == WaitlistStatus.Waiting).ToList();
         var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(scheduledClass.Id, ct);
         var freeSeats = scheduledClass.Capacity - takenSeats + enrollment.Seats;
-        var queueUserIds = freeSeats > 0
-            ? WaitlistFillResult.UserIdsWithinFreeSeats(stillWaiting, freeSeats)
-            : [];
-        var passes = await LockPassesAsync(WaitlistFillResult.InLockOrder(queueUserIds, enrollment.UserId), ct);
-        if (!passes.TryGetValue(enrollment.UserId, out var pass))
-        {
-            throw new InvalidOperationException("Pass was not found.");
-        }
-
+        var waiting = await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct);
+        var stillWaiting = WaitlistFillResult.CancelOwnRequest(waiting, enrollment.UserId);
+        var passes = await _unitOfWork.Pass.GetByUsersForUpdateAsync(
+            WaitlistFillResult.PassIdsToLock(stillWaiting, freeSeats, enrollment.UserId),
+            ct);
+        var pass = WaitlistFillResult.Require(passes, enrollment.UserId);
         var refundedVisits = Refund(scheduledClass, enrollment, pass, now);
         enrollment.Status = EnrollmentStatus.Cancelled;
         enrollment.CancelledAt = now;
         enrollment.RefundedVisits = refundedVisits;
         await _unitOfWork.SaveChangesAsync(ct);
-
-        var promotion = freeSeats > 0 && stillWaiting.Count > 0
-            ? WaitlistFillResult.Fill(scheduledClass, stillWaiting, passes, freeSeats, now)
-            : WaitlistFillResult.None;
+        var promotion = WaitlistFillResult.TryFill(scheduledClass, stillWaiting, passes, freeSeats, now);
         if (promotion.Changed)
         {
             await _unitOfWork.SaveChangesAsync(ct);
@@ -131,34 +119,6 @@ public sealed class CancelEnrollmentService
 
         pass.RemainingVisits += enrollment.Seats;
         return enrollment.Seats;
-    }
-
-    private async Task<Pass> LockPassAsync(long userId, CancellationToken ct)
-    {
-        var passes = await LockPassesAsync(WaitlistFillResult.InLockOrder([], userId), ct);
-        if (!passes.TryGetValue(userId, out var pass))
-        {
-            throw new InvalidOperationException("Pass was not found.");
-        }
-
-        return pass;
-    }
-
-    private async Task<Dictionary<long, Pass>> LockPassesAsync(IReadOnlyList<long> userIds, CancellationToken ct)
-    {
-        var passes = new Dictionary<long, Pass>();
-        foreach (var userId in userIds)
-        {
-            var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(userId, ct);
-            if (pass is null)
-            {
-                throw new InvalidOperationException("Pass was not found.");
-            }
-
-            passes.Add(userId, pass);
-        }
-
-        return passes;
     }
 
     private static CancelledEnrollment ToResponse(Enrollment enrollment)

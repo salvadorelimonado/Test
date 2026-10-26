@@ -122,36 +122,17 @@ public sealed class ChangeSeatsService
     {
         var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(scheduledClass.Id, ct);
         var freeNow = scheduledClass.Capacity - takenSeats;
-        var waiting = await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct);
-
-        foreach (var entry in waiting)
-        {
-            if (entry.UserId == enrollment.UserId)
-            {
-                entry.Status = WaitlistStatus.Cancelled;
-            }
-        }
-
-        var stillWaiting = waiting.Where(entry => entry.Status == WaitlistStatus.Waiting).ToList();
         var freeSeats = QueueFreeSeats(delta, freeNow);
-        var queueUserIds = freeSeats > 0
-            ? WaitlistFillResult.UserIdsWithinFreeSeats(stillWaiting, freeSeats)
-            : [];
-        var passes = await LockPassesAsync(WaitlistFillResult.InLockOrder(queueUserIds, enrollment.UserId), ct);
-        if (!passes.TryGetValue(enrollment.UserId, out var pass))
-        {
-            throw new InvalidOperationException("Pass was not found.");
-        }
-
+        var waiting = await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct);
+        var stillWaiting = WaitlistFillResult.CancelOwnRequest(waiting, enrollment.UserId);
+        var passes = await _unitOfWork.Pass.GetByUsersForUpdateAsync(
+            WaitlistFillResult.PassIdsToLock(stillWaiting, freeSeats, enrollment.UserId),
+            ct);
+        var pass = WaitlistFillResult.Require(passes, enrollment.UserId);
         enrollment.Seats = seats;
         pass.RemainingVisits -= delta;
         await _unitOfWork.SaveChangesAsync(ct);
-        if (freeSeats <= 0 || stillWaiting.Count == 0)
-        {
-            return [];
-        }
-
-        var promotion = WaitlistFillResult.Fill(scheduledClass, stillWaiting, passes, freeSeats, now);
+        var promotion = WaitlistFillResult.TryFill(scheduledClass, stillWaiting, passes, freeSeats, now);
         if (promotion.Changed)
         {
             await _unitOfWork.SaveChangesAsync(ct);
@@ -214,6 +195,27 @@ public sealed class ChangeSeatsService
         return null;
     }
 
+    private static int QueueFreeSeats(int delta, int freeNow)
+    {
+        if (delta > 0)
+        {
+            return freeNow >= delta ? freeNow : 0;
+        }
+
+        var predicted = (long)freeNow - delta;
+        if (predicted <= 0)
+        {
+            return 0;
+        }
+
+        if (predicted > int.MaxValue)
+        {
+            return int.MaxValue;
+        }
+
+        return (int)predicted;
+    }
+
     private async Task<WaitlistFillResult> PromoteWaitingAsync(
         Class scheduledClass,
         DateTime now,
@@ -238,8 +240,8 @@ public sealed class ChangeSeatsService
             return WaitlistFillResult.None;
         }
 
-        var passes = await LockPassesAsync(
-            WaitlistFillResult.InLockOrder(WaitlistFillResult.UserIdsWithinFreeSeats(waiting, freeSeats), ownerUserId),
+        var passes = await _unitOfWork.Pass.GetByUsersForUpdateAsync(
+            WaitlistFillResult.PassIdsToLock(waiting, freeSeats, ownerUserId),
             ct);
         var result = WaitlistFillResult.Fill(scheduledClass, waiting, passes, freeSeats, now);
         if (result.Changed)
@@ -250,64 +252,19 @@ public sealed class ChangeSeatsService
         return result;
     }
 
-    private static int QueueFreeSeats(int delta, int freeNow)
-    {
-        if (delta > 0)
-        {
-            return freeNow >= delta ? freeNow : 0;
-        }
-
-        var predicted = (long)freeNow - delta;
-        if (predicted <= 0)
-        {
-            return 0;
-        }
-
-        if (predicted > int.MaxValue)
-        {
-            return int.MaxValue;
-        }
-
-        return (int)predicted;
-    }
-
     private async Task<Pass> LockOwnerAndQueueAsync(
         Class scheduledClass,
         long ownerUserId,
         int freeSeats,
         CancellationToken ct)
     {
-        IReadOnlyList<long> queueUserIds = [];
-        if (freeSeats > 0)
-        {
-            var waiting = await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct);
-            queueUserIds = WaitlistFillResult.UserIdsWithinFreeSeats(waiting, freeSeats);
-        }
-
-        var passes = await LockPassesAsync(WaitlistFillResult.InLockOrder(queueUserIds, ownerUserId), ct);
-        if (!passes.TryGetValue(ownerUserId, out var pass))
-        {
-            throw new InvalidOperationException("Pass was not found.");
-        }
-
-        return pass;
-    }
-
-    private async Task<Dictionary<long, Pass>> LockPassesAsync(IReadOnlyList<long> userIds, CancellationToken ct)
-    {
-        var passes = new Dictionary<long, Pass>();
-        foreach (var userId in userIds)
-        {
-            var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(userId, ct);
-            if (pass is null)
-            {
-                throw new InvalidOperationException("Pass was not found.");
-            }
-
-            passes.Add(userId, pass);
-        }
-
-        return passes;
+        var waiting = freeSeats > 0
+            ? await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct)
+            : [];
+        var passes = await _unitOfWork.Pass.GetByUsersForUpdateAsync(
+            WaitlistFillResult.PassIdsToLock(waiting, freeSeats, ownerUserId),
+            ct);
+        return WaitlistFillResult.Require(passes, ownerUserId);
     }
 
     private sealed record IncreaseRejection(

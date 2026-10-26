@@ -40,6 +40,60 @@ public sealed class WaitlistFillResult
         return userIds.Distinct().OrderBy(id => id).ToList();
     }
 
+    public static List<WaitlistEntry> CancelOwnRequest(IReadOnlyList<WaitlistEntry> waiting, long userId)
+    {
+        // решение: свою заявку на это занятие снимаем до продвижения, иначе клиент
+        // сразу получит вторую бронь на места, которые только что освободил.
+        foreach (var entry in waiting)
+        {
+            if (entry.UserId == userId)
+            {
+                entry.Status = WaitlistStatus.Cancelled;
+            }
+        }
+
+        return waiting.Where(entry => entry.Status == WaitlistStatus.Waiting).ToList();
+    }
+
+    public static IReadOnlyList<long> PassIdsToLock(
+        IReadOnlyList<WaitlistEntry> waiting,
+        int freeSeats,
+        long? includeUserId)
+    {
+        var queueUserIds = freeSeats > 0 ? UserIdsWithinFreeSeats(waiting, freeSeats) : [];
+        if (includeUserId is long userId)
+        {
+            return InLockOrder(queueUserIds, userId);
+        }
+
+        return queueUserIds.Distinct().OrderBy(id => id).ToList();
+    }
+
+    public static Pass Require(IReadOnlyDictionary<long, Pass> passes, long userId)
+    {
+        if (!passes.TryGetValue(userId, out var pass))
+        {
+            throw new InvalidOperationException("Pass was not found.");
+        }
+
+        return pass;
+    }
+
+    public static WaitlistFillResult TryFill(
+        Class scheduledClass,
+        IReadOnlyList<WaitlistEntry> waiting,
+        IReadOnlyDictionary<long, Pass> passes,
+        int freeSeats,
+        DateTime now)
+    {
+        if (freeSeats <= 0 || waiting.Count == 0)
+        {
+            return None;
+        }
+
+        return Fill(scheduledClass, waiting, passes, freeSeats, now);
+    }
+
     public static WaitlistFillResult Fill(
         Class scheduledClass,
         IReadOnlyList<WaitlistEntry> waiting,

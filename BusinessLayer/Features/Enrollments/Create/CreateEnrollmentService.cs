@@ -230,8 +230,8 @@ public sealed class CreateEnrollmentService
             return WaitlistFillResult.None;
         }
 
-        var passes = await LockPassesAsync(
-            WaitlistFillResult.InLockOrder(WaitlistFillResult.UserIdsWithinFreeSeats(waiting, freeSeats), ownerUserId),
+        var passes = await _unitOfWork.Pass.GetByUsersForUpdateAsync(
+            WaitlistFillResult.PassIdsToLock(waiting, freeSeats, ownerUserId),
             ct);
         var result = WaitlistFillResult.Fill(scheduledClass, waiting, passes, freeSeats, now);
         if (result.Changed)
@@ -248,37 +248,13 @@ public sealed class CreateEnrollmentService
         int freeSeats,
         CancellationToken ct)
     {
-        IReadOnlyList<long> queueUserIds = [];
-        if (freeSeats > 0)
-        {
-            var waiting = await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct);
-            queueUserIds = WaitlistFillResult.UserIdsWithinFreeSeats(waiting, freeSeats);
-        }
-
-        var passes = await LockPassesAsync(WaitlistFillResult.InLockOrder(queueUserIds, ownerUserId), ct);
-        if (!passes.TryGetValue(ownerUserId, out var pass))
-        {
-            throw new InvalidOperationException("Pass was not found.");
-        }
-
-        return pass;
-    }
-
-    private async Task<Dictionary<long, Pass>> LockPassesAsync(IReadOnlyList<long> userIds, CancellationToken ct)
-    {
-        var passes = new Dictionary<long, Pass>();
-        foreach (var userId in userIds)
-        {
-            var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(userId, ct);
-            if (pass is null)
-            {
-                throw new InvalidOperationException("Pass was not found.");
-            }
-
-            passes.Add(userId, pass);
-        }
-
-        return passes;
+        var waiting = freeSeats > 0
+            ? await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct)
+            : [];
+        var passes = await _unitOfWork.Pass.GetByUsersForUpdateAsync(
+            WaitlistFillResult.PassIdsToLock(waiting, freeSeats, ownerUserId),
+            ct);
+        return WaitlistFillResult.Require(passes, ownerUserId);
     }
 
     private sealed record BookingAttempt(

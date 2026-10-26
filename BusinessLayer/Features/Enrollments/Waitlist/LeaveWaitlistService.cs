@@ -114,18 +114,9 @@ public sealed class LeaveWaitlistService
             return WaitlistFillResult.None;
         }
 
-        var passes = new Dictionary<long, Pass>();
-        foreach (var userId in WaitlistFillResult.UserIdsWithinFreeSeats(waiting, freeSeats).Distinct().OrderBy(id => id))
-        {
-            var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(userId, ct);
-            if (pass is null)
-            {
-                throw new InvalidOperationException("Pass was not found.");
-            }
-
-            passes.Add(userId, pass);
-        }
-
+        var passes = await _unitOfWork.Pass.GetByUsersForUpdateAsync(
+            WaitlistFillResult.PassIdsToLock(waiting, freeSeats, null),
+            ct);
         var result = WaitlistFillResult.Fill(scheduledClass, waiting, passes, freeSeats, now);
         if (result.Changed)
         {

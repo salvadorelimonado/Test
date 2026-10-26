@@ -22,4 +22,23 @@ public class PassRepository : GenericRepository<Pass>, IPassRepository
             .FromSql($"SELECT * FROM passes WHERE user_id = {userId} FOR UPDATE")
             .FirstOrDefaultAsync(ct);
     }
+
+    public async Task<IReadOnlyDictionary<long, Pass>> GetByUsersForUpdateAsync(
+        IReadOnlyList<long> userIds,
+        CancellationToken ct = default)
+    {
+        var passes = new Dictionary<long, Pass>();
+        foreach (var userId in userIds)
+        {
+            var pass = await GetByUserForUpdateAsync(userId, ct);
+            if (pass is null)
+            {
+                throw new InvalidOperationException("Pass was not found.");
+            }
+
+            passes.Add(userId, pass);
+        }
+
+        return passes;
+    }
 }
