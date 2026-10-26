@@ -5,6 +5,12 @@ namespace WebApi.Features.Schedule;
 
 public sealed class UtcDateTimeModelBinder : IModelBinder
 {
+    private static readonly string[] Formats =
+    [
+        "yyyy-MM-dd",
+        "yyyy-MM-ddTHH:mm:ssK"
+    ];
+
     public Task BindModelAsync(ModelBindingContext bindingContext)
     {
         var value = bindingContext.ValueProvider.GetValue(bindingContext.ModelName);
@@ -27,13 +33,15 @@ public sealed class UtcDateTimeModelBinder : IModelBinder
     private static bool TryParseUtc(string? text, out DateTime utc)
     {
         utc = default;
-        if (string.IsNullOrWhiteSpace(text) || !text.Contains(':'))
+        if (string.IsNullOrWhiteSpace(text))
         {
             return false;
         }
 
-        if (!DateTime.TryParse(
+        // решение: дата без времени — полночь этих суток в UTC.
+        if (!DateTimeOffset.TryParseExact(
                 text,
+                Formats,
                 CultureInfo.InvariantCulture,
                 DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
                 out var parsed))
@@ -41,7 +49,7 @@ public sealed class UtcDateTimeModelBinder : IModelBinder
             return false;
         }
 
-        utc = DateTime.SpecifyKind(parsed, DateTimeKind.Utc);
+        utc = DateTime.SpecifyKind(parsed.UtcDateTime, DateTimeKind.Utc);
         return true;
     }
 }
