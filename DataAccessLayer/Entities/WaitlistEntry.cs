@@ -14,5 +14,9 @@ public class WaitlistEntry : IEntity
 
     public WaitlistStatus Status { get; set; }
 
+    public long? PromotedEnrollmentId { get; set; }
+
+    public Enrollment? PromotedEnrollment { get; set; }
+
     public DateTime CreatedAt { get; set; }
 }

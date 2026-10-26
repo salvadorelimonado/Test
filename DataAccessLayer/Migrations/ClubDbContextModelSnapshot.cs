@@ -267,6 +267,10 @@ namespace DataAccessLayer.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<long?>("PromotedEnrollmentId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("promoted_enrollment_id");
+
                     b.Property<int>("Seats")
                         .HasColumnType("integer")
                         .HasColumnName("seats");
@@ -282,6 +286,9 @@ namespace DataAccessLayer.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_waitlist_entries");
+
+                    b.HasIndex("PromotedEnrollmentId")
+                        .HasDatabaseName("ix_waitlist_entries_promoted_enrollment_id");
 
                     b.HasIndex("UserId", "ClassId")
                         .IsUnique()
@@ -360,6 +367,14 @@ namespace DataAccessLayer.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_waitlist_entries_users_user_id");
+
+                    b.HasOne("DataAccessLayer.Entities.Enrollment", "PromotedEnrollment")
+                        .WithMany()
+                        .HasForeignKey("PromotedEnrollmentId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .HasConstraintName("fk_waitlist_entries_enrollments_promoted_enrollment_id");
+
+                    b.Navigation("PromotedEnrollment");
                 });
 
             modelBuilder.Entity("DataAccessLayer.Entities.Class", b =>

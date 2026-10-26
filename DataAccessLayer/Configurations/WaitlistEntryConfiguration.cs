@@ -22,6 +22,12 @@ public class WaitlistEntryConfiguration : IEntityTypeConfiguration<WaitlistEntry
             .WithMany()
             .HasForeignKey(x => x.ClassId);
 
+        builder
+            .HasOne(x => x.PromotedEnrollment)
+            .WithMany()
+            .HasForeignKey(x => x.PromotedEnrollmentId)
+            .OnDelete(DeleteBehavior.NoAction);
+
         builder.HasIndex(x => new { x.ClassId, x.Status, x.CreatedAt, x.Id });
 
         builder.HasIndex(x => new { x.UserId, x.ClassId })
