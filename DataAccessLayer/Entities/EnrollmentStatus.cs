@@ -1,5 +1,9 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace DataAccessLayer.Entities;
 
+[JsonConverter(typeof(KebabCaseEnumConverter<EnrollmentStatus>))]
 public enum EnrollmentStatus
 {
     Active,
@@ -10,21 +14,21 @@ public static class EnrollmentStatusMapping
 {
     public static string ToDatabase(EnrollmentStatus status)
     {
-        return status switch
-        {
-            EnrollmentStatus.Active => "active",
-            EnrollmentStatus.Cancelled => "cancelled",
-            _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
-        };
+        return JsonNamingPolicy.KebabCaseLower.ConvertName(status.ToString());
     }
 
     public static EnrollmentStatus FromDatabase(string value)
     {
-        return value switch
+        if (value is null)
         {
-            "active" => EnrollmentStatus.Active,
-            "cancelled" => EnrollmentStatus.Cancelled,
-            _ => throw new ArgumentOutOfRangeException(nameof(value), value, null)
-        };
+            throw new ArgumentNullException(nameof(value));
+        }
+
+        if (!Enum.TryParse<EnrollmentStatus>(value, ignoreCase: true, out var status))
+        {
+            throw new ArgumentOutOfRangeException(nameof(value), value, null);
+        }
+
+        return status;
     }
 }
