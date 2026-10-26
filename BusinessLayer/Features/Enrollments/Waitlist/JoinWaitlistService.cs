@@ -74,6 +74,24 @@ public sealed class JoinWaitlistService
             return Reject(JoinWaitlistResult.Conflict(EnrollmentConflictConstants.SeatsAvailable));
         }
 
+        var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(command.UserId, ct);
+        if (pass is null)
+        {
+            throw new InvalidOperationException("Pass was not found.");
+        }
+
+        var today = DateOnly.FromDateTime(now);
+        // решение: без действующего абонемента заявка не продвинется и навсегда займёт место в очереди.
+        if (pass.ValidUntil < today)
+        {
+            return Reject(JoinWaitlistResult.Conflict(EnrollmentConflictConstants.PassExpired));
+        }
+
+        if (pass.RemainingVisits < command.Seats)
+        {
+            return Reject(JoinWaitlistResult.Conflict(EnrollmentConflictConstants.PassExhausted));
+        }
+
         var entry = new WaitlistEntry
         {
             UserId = command.UserId,
