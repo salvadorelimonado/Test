@@ -1,3 +1,4 @@
+using BusinessLayer.Result;
 using DataAccessLayer.UnitOfWork;
 
 namespace BusinessLayer.Features.Enrollments.Get;
@@ -13,26 +14,26 @@ public sealed class GetEnrollmentService
         _cardCache = cardCache;
     }
 
-    public async Task<GetEnrollmentResult> GetAsync(GetEnrollmentCommand command, CancellationToken ct)
+    public async Task<OperationResult<EnrollmentCard>> GetAsync(GetEnrollmentQuery query, CancellationToken ct)
     {
         var card = await _cardCache.GetOrLoadAsync(
-            command.UserId,
-            command.EnrollmentId,
-            token => LoadAsync(command, token),
+            query.UserId,
+            query.EnrollmentId,
+            token => LoadAsync(query, token),
             ct);
 
         if (card is null)
         {
-            return GetEnrollmentResult.NotFound();
+            return new OperationResult<EnrollmentCard>.NotFound();
         }
 
-        return GetEnrollmentResult.Found(card);
+        return new OperationResult<EnrollmentCard>.Ok(card);
     }
 
-    private async Task<EnrollmentCard?> LoadAsync(GetEnrollmentCommand command, CancellationToken ct)
+    private async Task<EnrollmentCard?> LoadAsync(GetEnrollmentQuery query, CancellationToken ct)
     {
-        var enrollment = await _unitOfWork.Enrollment.GetByIdAsync(command.EnrollmentId, ct);
-        if (enrollment is null || enrollment.UserId != command.UserId)
+        var enrollment = await _unitOfWork.Enrollment.GetByIdAsync(query.EnrollmentId, ct);
+        if (enrollment is null || enrollment.UserId != query.UserId)
         {
             return null;
         }
@@ -49,7 +50,7 @@ public sealed class GetEnrollmentService
             throw new InvalidOperationException("Room was not found.");
         }
 
-        var pass = await _unitOfWork.Pass.GetByUserAsync(command.UserId, ct);
+        var pass = await _unitOfWork.Pass.GetByUserAsync(query.UserId, ct);
         if (pass is null)
         {
             throw new InvalidOperationException("Pass was not found.");

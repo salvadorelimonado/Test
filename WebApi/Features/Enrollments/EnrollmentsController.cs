@@ -7,10 +7,8 @@ using BusinessLayer.Features.Enrollments.Create;
 using BusinessLayer.Features.Enrollments.Get;
 using BusinessLayer.Features.Enrollments.Waitlist;
 using WebApi.Controllers;
-using WebApi.Features.Enrollments.Cancel;
 using WebApi.Features.Enrollments.ChangeSeats;
 using WebApi.Features.Enrollments.Create;
-using WebApi.Features.Enrollments.Get;
 using WebApi.Features.Enrollments.Waitlist;
 using WebApi.Helpers;
 using WebApi.Idempotency;
@@ -72,7 +70,7 @@ public class EnrollmentsController : BaseApiController
             IdempotencyKey = idempotencyKey
         };
         var result = await _createEnrollmentService.CreateAsync(command, ct);
-        return CreateEnrollmentResultToActionResultMapper.From(result);
+        return result.ToActionResult(StatusCodes.Status201Created);
     }
 
     [HttpPost("waitlist")]
@@ -97,7 +95,7 @@ public class EnrollmentsController : BaseApiController
             IdempotencyKey = idempotencyKey
         };
         var result = await _joinWaitlistService.JoinAsync(command, ct);
-        return JoinWaitlistResultToActionResultMapper.From(result);
+        return result.ToActionResult(StatusCodes.Status201Created);
     }
 
     [HttpPost("waitlist/{id}/cancel")]
@@ -113,8 +111,8 @@ public class EnrollmentsController : BaseApiController
             UserId = userId,
             EntryId = id
         };
-        var result = await _leaveWaitlistService.LeaveAsync(command, ct);
-        return LeaveWaitlistResultToActionResultMapper.From(result);
+        var model = await _leaveWaitlistService.LeaveAsync(command, ct);
+        return ToLeaveActionResult(model);
     }
 
     [HttpPost("{id}/seats")]
@@ -132,7 +130,7 @@ public class EnrollmentsController : BaseApiController
             Seats = request.Seats
         };
         var result = await _changeSeatsService.ChangeAsync(command, ct);
-        return ChangeSeatsResultToActionResultMapper.From(result);
+        return result.ToActionResult(StatusCodes.Status200OK);
     }
 
     [HttpPost("{id}/cancel")]
@@ -149,7 +147,7 @@ public class EnrollmentsController : BaseApiController
             EnrollmentId = id
         };
         var result = await _cancelEnrollmentService.CancelAsync(command, ct);
-        return CancelEnrollmentResultToActionResultMapper.From(result);
+        return result.ToActionResult(StatusCodes.Status200OK);
     }
 
     [HttpGet("{id}")]
@@ -160,12 +158,34 @@ public class EnrollmentsController : BaseApiController
             return Unauthorized();
         }
 
-        var command = new GetEnrollmentCommand
+        var query = new GetEnrollmentQuery
         {
             UserId = userId,
             EnrollmentId = id
         };
-        var result = await _getEnrollmentService.GetAsync(command, ct);
-        return GetEnrollmentResultToActionResultMapper.From(result);
+        var result = await _getEnrollmentService.GetAsync(query, ct);
+        return result.ToActionResult(StatusCodes.Status200OK);
+    }
+
+    private static IActionResult ToLeaveActionResult(LeaveWaitlistModel model)
+    {
+        var actionResult = model.Result.ToActionResult(StatusCodes.Status200OK);
+        if (model.PromotedEnrollmentId is not long promotedEnrollmentId)
+        {
+            return actionResult;
+        }
+
+        if (actionResult is not ObjectResult problem)
+        {
+            throw new ArgumentNullException(nameof(actionResult));
+        }
+
+        if (problem.Value is not ProblemDetails details)
+        {
+            throw new ArgumentNullException(nameof(problem.Value));
+        }
+
+        details.Extensions["promotedEnrollmentId"] = promotedEnrollmentId;
+        return actionResult;
     }
 }

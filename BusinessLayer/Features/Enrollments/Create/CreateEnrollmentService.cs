@@ -1,8 +1,9 @@
 using System.Globalization;
-using DataAccessLayer.Entities;
-using DataAccessLayer.UnitOfWork;
 using BusinessLayer.Features.Enrollments;
 using BusinessLayer.Idempotency;
+using BusinessLayer.Result;
+using DataAccessLayer.Entities;
+using DataAccessLayer.UnitOfWork;
 
 namespace BusinessLayer.Features.Enrollments.Create;
 
@@ -25,19 +26,18 @@ public sealed class CreateEnrollmentService
         _cardCache = cardCache;
     }
 
-    public async Task<CreateEnrollmentResult> CreateAsync(CreateEnrollmentCommand command, CancellationToken ct)
+    public async Task<OperationResult<CreateEnrollmentResponse>> CreateAsync(CreateEnrollmentCommand command, CancellationToken ct)
     {
         var result = await _idempotency.RunAsync(
             command.UserId,
             IdempotencyOperation.Enroll,
             command.IdempotencyKey,
             CanonicalRequest(command.ClassId, command.Seats),
-            CreateEnrollmentResult.Created,
-            () => CreateEnrollmentResult.Conflict(EnrollmentConflictConstants.IdempotencyMismatch),
+            () => new OperationResult<CreateEnrollmentResponse>.Conflict(EnrollmentConflictConstants.IdempotencyMismatch),
             token => BookAsync(command, token),
             ct);
 
-        if (result.Outcome == CreateEnrollmentOutcome.Created)
+        if (result is OperationResult<CreateEnrollmentResponse>.Ok)
         {
             await _cardCache.InvalidateAsync(command.UserId, ct);
         }
@@ -45,7 +45,7 @@ public sealed class CreateEnrollmentService
         return result;
     }
 
-    private async Task<IdempotencyWork<CreateEnrollmentResponse, CreateEnrollmentResult>> BookAsync(
+    private async Task<OperationResult<CreateEnrollmentResponse>> BookAsync(
         CreateEnrollmentCommand command,
         CancellationToken ct)
     {
@@ -53,18 +53,18 @@ public sealed class CreateEnrollmentService
         var scheduledClass = await _unitOfWork.Class.GetByIdForUpdateAsync(command.ClassId, ct);
         if (scheduledClass is null)
         {
-            return Reject(CreateEnrollmentResult.NotFound());
+            return new OperationResult<CreateEnrollmentResponse>.NotFound();
         }
 
         if (scheduledClass.IsCancelled)
         {
-            return Reject(CreateEnrollmentResult.Conflict(EnrollmentConflictConstants.ClassCancelled));
+            return new OperationResult<CreateEnrollmentResponse>.Conflict(EnrollmentConflictConstants.ClassCancelled);
         }
 
         var now = TruncateToMicroseconds(_clock.GetUtcNow().UtcDateTime);
         if (now >= scheduledClass.StartsAt)
         {
-            return Reject(CreateEnrollmentResult.Conflict(EnrollmentConflictConstants.ClassStarted));
+            return new OperationResult<CreateEnrollmentResponse>.Conflict(EnrollmentConflictConstants.ClassStarted);
         }
 
         var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(command.UserId, ct);
@@ -76,25 +76,25 @@ public sealed class CreateEnrollmentService
         var today = DateOnly.FromDateTime(now);
         if (pass.ValidUntil < today)
         {
-            return Reject(CreateEnrollmentResult.Conflict(EnrollmentConflictConstants.PassExpired));
+            return new OperationResult<CreateEnrollmentResponse>.Conflict(EnrollmentConflictConstants.PassExpired);
         }
 
         if (pass.RemainingVisits < command.Seats)
         {
-            return Reject(CreateEnrollmentResult.Conflict(EnrollmentConflictConstants.PassExhausted));
+            return new OperationResult<CreateEnrollmentResponse>.Conflict(EnrollmentConflictConstants.PassExhausted);
         }
 
         var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(command.ClassId, ct);
         var freeSeats = scheduledClass.Capacity - takenSeats;
         if (freeSeats < command.Seats)
         {
-            return Reject(CreateEnrollmentResult.Conflict(EnrollmentConflictConstants.CapacityExceeded));
+            return new OperationResult<CreateEnrollmentResponse>.Conflict(EnrollmentConflictConstants.CapacityExceeded);
         }
 
         var waitingCount = await _unitOfWork.Waitlist.CountWaitingAsync(command.ClassId, ct);
         if (waitingCount > 0)
         {
-            return Reject(CreateEnrollmentResult.Conflict(EnrollmentConflictConstants.WaitlistNotEmpty));
+            return new OperationResult<CreateEnrollmentResponse>.Conflict(EnrollmentConflictConstants.WaitlistNotEmpty);
         }
 
         var enrollment = new Enrollment
@@ -119,17 +119,7 @@ public sealed class CreateEnrollmentService
             CreatedAt = now
         };
 
-        return Done(response);
-    }
-
-    private static IdempotencyWork<CreateEnrollmentResponse, CreateEnrollmentResult> Done(CreateEnrollmentResponse response)
-    {
-        return IdempotencyWork<CreateEnrollmentResponse, CreateEnrollmentResult>.Done(response);
-    }
-
-    private static IdempotencyWork<CreateEnrollmentResponse, CreateEnrollmentResult> Reject(CreateEnrollmentResult result)
-    {
-        return IdempotencyWork<CreateEnrollmentResponse, CreateEnrollmentResult>.Reject(result);
+        return new OperationResult<CreateEnrollmentResponse>.Ok(response);
     }
 
     private static string CanonicalRequest(long classId, int seats)

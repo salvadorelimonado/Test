@@ -3,6 +3,7 @@ using System.Data.Common;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using BusinessLayer.Result;
 using DataAccessLayer.Database;
 using DataAccessLayer.Entities;
 using DataAccessLayer.UnitOfWork;
@@ -22,17 +23,15 @@ public sealed class IdempotencyExecution
         _clock = clock;
     }
 
-    public async Task<TResult> RunAsync<TResponse, TResult>(
+    public async Task<OperationResult<TResponse>> RunAsync<TResponse>(
         long userId,
         IdempotencyOperation operation,
         string idempotencyKey,
         string canonicalRequest,
-        Func<TResponse, TResult> success,
-        Func<TResult> mismatch,
-        Func<CancellationToken, Task<IdempotencyWork<TResponse, TResult>>> work,
+        Func<OperationResult<TResponse>> mismatch,
+        Func<CancellationToken, Task<OperationResult<TResponse>>> work,
         CancellationToken cancellationToken)
         where TResponse : class
-        where TResult : class
     {
         var keyHash = Hash(idempotencyKey);
         var requestHash = Hash(canonicalRequest);
@@ -44,7 +43,6 @@ public sealed class IdempotencyExecution
                 operation,
                 keyHash,
                 requestHash,
-                success,
                 mismatch,
                 work,
                 cancellationToken);
@@ -54,39 +52,32 @@ public sealed class IdempotencyExecution
             IdempotencyRecord.KeyIndexName))
         {
             _unitOfWork.ClearChangeTracker();
-            return await ReplayAsync(userId, operation, keyHash, requestHash, success, mismatch, cancellationToken);
+            return await ReplayAsync(userId, operation, keyHash, requestHash, mismatch, cancellationToken);
         }
     }
 
-    private async Task<TResult> RunInTransactionAsync<TResponse, TResult>(
+    private async Task<OperationResult<TResponse>> RunInTransactionAsync<TResponse>(
         long userId,
         IdempotencyOperation operation,
         byte[] keyHash,
         byte[] requestHash,
-        Func<TResponse, TResult> success,
-        Func<TResult> mismatch,
-        Func<CancellationToken, Task<IdempotencyWork<TResponse, TResult>>> work,
+        Func<OperationResult<TResponse>> mismatch,
+        Func<CancellationToken, Task<OperationResult<TResponse>>> work,
         CancellationToken cancellationToken)
         where TResponse : class
-        where TResult : class
     {
         await using var transaction = await _unitOfWork.DbContext.Database.BeginTransactionAsync(cancellationToken);
         await LockSameKeyAsync(userId, operation, keyHash, cancellationToken);
         var existing = await _unitOfWork.Idempotency.FindAsync(userId, operation, keyHash, cancellationToken);
         if (existing is not null)
         {
-            return Resolve(existing, requestHash, success, mismatch);
+            return Resolve(existing, requestHash, mismatch);
         }
 
         var step = await work(cancellationToken);
-        if (step.Response is null)
+        if (step is not OperationResult<TResponse>.Ok ok)
         {
-            if (step.Failure is null)
-            {
-                throw new ArgumentNullException(nameof(step.Failure));
-            }
-
-            return step.Failure;
+            return step;
         }
 
         var now = _clock.GetUtcNow().UtcDateTime;
@@ -96,26 +87,24 @@ public sealed class IdempotencyExecution
             Operation = operation,
             KeyHash = keyHash,
             RequestHash = requestHash,
-            ResponseBody = JsonSerializer.Serialize(step.Response, JsonSerializerOptions.Web),
+            ResponseBody = JsonSerializer.Serialize(ok.Value, JsonSerializerOptions.Web),
             CreatedAt = new DateTime(now.Ticks - now.Ticks % 10, DateTimeKind.Utc)
         };
 
         await _unitOfWork.Idempotency.CreateAsync(record, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        return success(step.Response);
+        return ok;
     }
 
-    private async Task<TResult> ReplayAsync<TResponse, TResult>(
+    private async Task<OperationResult<TResponse>> ReplayAsync<TResponse>(
         long userId,
         IdempotencyOperation operation,
         byte[] keyHash,
         byte[] requestHash,
-        Func<TResponse, TResult> success,
-        Func<TResult> mismatch,
+        Func<OperationResult<TResponse>> mismatch,
         CancellationToken cancellationToken)
         where TResponse : class
-        where TResult : class
     {
         var existing = await _unitOfWork.Idempotency.FindAsync(userId, operation, keyHash, cancellationToken);
         if (existing is null)
@@ -123,16 +112,14 @@ public sealed class IdempotencyExecution
             throw new InvalidOperationException("Idempotency record was not found after a unique constraint violation.");
         }
 
-        return Resolve(existing, requestHash, success, mismatch);
+        return Resolve(existing, requestHash, mismatch);
     }
 
-    private static TResult Resolve<TResponse, TResult>(
+    private static OperationResult<TResponse> Resolve<TResponse>(
         IdempotencyRecord existing,
         byte[] requestHash,
-        Func<TResponse, TResult> success,
-        Func<TResult> mismatch)
+        Func<OperationResult<TResponse>> mismatch)
         where TResponse : class
-        where TResult : class
     {
         if (!existing.RequestHash.AsSpan().SequenceEqual(requestHash))
         {
@@ -145,7 +132,7 @@ public sealed class IdempotencyExecution
             throw new InvalidOperationException("Stored idempotency response is empty.");
         }
 
-        return success(response);
+        return new OperationResult<TResponse>.Ok(response);
     }
 
     private async Task LockSameKeyAsync(

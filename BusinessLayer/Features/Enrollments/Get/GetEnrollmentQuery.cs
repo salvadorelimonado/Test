@@ -1,6 +1,6 @@
 namespace BusinessLayer.Features.Enrollments.Get;
 
-public sealed class GetEnrollmentCommand
+public sealed class GetEnrollmentQuery
 {
     public required long UserId { get; init; }
 

@@ -1,3 +1,4 @@
+using BusinessLayer.Result;
 using DataAccessLayer.Entities;
 using DataAccessLayer.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
@@ -13,30 +14,30 @@ public sealed class LeaveWaitlistService
         _unitOfWork = unitOfWork;
     }
 
-    public async Task<LeaveWaitlistResult> LeaveAsync(LeaveWaitlistCommand command, CancellationToken ct)
+    public async Task<LeaveWaitlistModel> LeaveAsync(LeaveWaitlistCommand command, CancellationToken ct)
     {
         return await LeaveInTransactionAsync(command, ct);
     }
 
-    private async Task<LeaveWaitlistResult> LeaveInTransactionAsync(LeaveWaitlistCommand command, CancellationToken ct)
+    private async Task<LeaveWaitlistModel> LeaveInTransactionAsync(LeaveWaitlistCommand command, CancellationToken ct)
     {
         _unitOfWork.ClearChangeTracker();
         await using var transaction = await _unitOfWork.DbContext.Database.BeginTransactionAsync(ct);
-        var result = await LeaveLockedAsync(command, ct);
-        if (result.Outcome == LeaveWaitlistOutcome.Succeeded)
+        var model = await LeaveLockedAsync(command, ct);
+        if (model.Result is OperationResult<LeaveWaitlistResponse>.Ok)
         {
             await transaction.CommitAsync(ct);
         }
 
-        return result;
+        return model;
     }
 
-    private async Task<LeaveWaitlistResult> LeaveLockedAsync(LeaveWaitlistCommand command, CancellationToken ct)
+    private async Task<LeaveWaitlistModel> LeaveLockedAsync(LeaveWaitlistCommand command, CancellationToken ct)
     {
         var owner = await _unitOfWork.Waitlist.FindOwnerAsync(command.EntryId, ct);
         if (owner is null || owner.UserId != command.UserId)
         {
-            return LeaveWaitlistResult.NotFound();
+            return NotFound();
         }
 
         var scheduledClass = await _unitOfWork.Class.GetByIdForUpdateAsync(owner.ClassId, ct);
@@ -48,24 +49,43 @@ public sealed class LeaveWaitlistService
         var entry = await _unitOfWork.Waitlist.GetByIdForUpdateAsync(command.EntryId, ct);
         if (entry is null || entry.UserId != command.UserId)
         {
-            return LeaveWaitlistResult.NotFound();
+            return NotFound();
         }
 
         switch (entry.Status)
         {
             case WaitlistStatus.Promoted:
-                return LeaveWaitlistResult.Conflict(
-                    EnrollmentConflictConstants.AlreadyPromoted,
-                    entry.PromotedEnrollmentId);
+                return new LeaveWaitlistModel
+                {
+                    Result = new OperationResult<LeaveWaitlistResponse>.Conflict(
+                        EnrollmentConflictConstants.AlreadyPromoted),
+                    PromotedEnrollmentId = entry.PromotedEnrollmentId
+                };
             case WaitlistStatus.Cancelled:
-                return LeaveWaitlistResult.Succeeded(ToResponse(entry));
+                return Done(ToResponse(entry));
             case WaitlistStatus.Waiting:
                 entry.Status = WaitlistStatus.Cancelled;
                 await _unitOfWork.SaveChangesAsync(ct);
-                return LeaveWaitlistResult.Succeeded(ToResponse(entry));
+                return Done(ToResponse(entry));
             default:
                 throw new ArgumentOutOfRangeException(nameof(entry.Status), entry.Status, null);
         }
+    }
+
+    private static LeaveWaitlistModel Done(LeaveWaitlistResponse response)
+    {
+        return new LeaveWaitlistModel
+        {
+            Result = new OperationResult<LeaveWaitlistResponse>.Ok(response)
+        };
+    }
+
+    private static LeaveWaitlistModel NotFound()
+    {
+        return new LeaveWaitlistModel
+        {
+            Result = new OperationResult<LeaveWaitlistResponse>.NotFound()
+        };
     }
 
     private static LeaveWaitlistResponse ToResponse(WaitlistEntry entry)
