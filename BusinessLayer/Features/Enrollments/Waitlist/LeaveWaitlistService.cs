@@ -47,7 +47,7 @@ public sealed class LeaveWaitlistService
                 return new LeaveWaitlistModel
                 {
                     Result = new OperationResult<LeftWaitlist>.Conflict(
-                        EnrollmentConflictConstants.AlreadyPromoted),
+                        ConflictReason.AlreadyPromoted),
                     PromotedEnrollmentId = entry.PromotedEnrollmentId
                 };
             case WaitlistStatus.Cancelled:

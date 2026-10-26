@@ -66,7 +66,7 @@ public sealed class CancelEnrollmentService
         var now = _clock.TruncateToMicroseconds();
         if (!scheduledClass.IsCancelled && now >= scheduledClass.StartsAt)
         {
-            return CancelAttempt.Stop(new OperationResult<CancelledEnrollment>.Conflict(EnrollmentConflictConstants.ClassStarted));
+            return CancelAttempt.Stop(new OperationResult<CancelledEnrollment>.Conflict(ConflictReason.ClassStarted));
         }
 
         var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(enrollment.UserId, ct);

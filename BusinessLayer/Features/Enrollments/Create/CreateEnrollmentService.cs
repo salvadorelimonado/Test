@@ -89,7 +89,7 @@ public sealed class CreateEnrollmentService
             IdempotencyOperation.Enroll,
             command.IdempotencyKey,
             IdempotencyService.CanonicalRequest(command.ClassId, command.Seats),
-            EnrollmentConflictConstants.IdempotencyMismatch,
+            ConflictReason.IdempotencyMismatch,
             ct);
     }
 
@@ -119,13 +119,13 @@ public sealed class CreateEnrollmentService
 
         if (scheduledClass.IsCancelled)
         {
-            return new OperationResult<CreatedEnrollment>.Conflict(EnrollmentConflictConstants.ClassCancelled);
+            return new OperationResult<CreatedEnrollment>.Conflict(ConflictReason.ClassCancelled);
         }
 
         var now = _clock.TruncateToMicroseconds();
         if (now >= scheduledClass.StartsAt)
         {
-            return new OperationResult<CreatedEnrollment>.Conflict(EnrollmentConflictConstants.ClassStarted);
+            return new OperationResult<CreatedEnrollment>.Conflict(ConflictReason.ClassStarted);
         }
 
         var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(command.UserId, ct);
@@ -137,25 +137,25 @@ public sealed class CreateEnrollmentService
         var today = DateOnly.FromDateTime(now);
         if (pass.ValidUntil < today)
         {
-            return new OperationResult<CreatedEnrollment>.Conflict(EnrollmentConflictConstants.PassExpired);
+            return new OperationResult<CreatedEnrollment>.Conflict(ConflictReason.PassExpired);
         }
 
         if (pass.RemainingVisits < command.Seats)
         {
-            return new OperationResult<CreatedEnrollment>.Conflict(EnrollmentConflictConstants.PassExhausted);
+            return new OperationResult<CreatedEnrollment>.Conflict(ConflictReason.PassExhausted);
         }
 
         var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(command.ClassId, ct);
         var freeSeats = scheduledClass.Capacity - takenSeats;
         if (freeSeats < command.Seats)
         {
-            return new OperationResult<CreatedEnrollment>.Conflict(EnrollmentConflictConstants.CapacityExceeded);
+            return new OperationResult<CreatedEnrollment>.Conflict(ConflictReason.CapacityExceeded);
         }
 
         var waitingCount = await _unitOfWork.Waitlist.CountWaitingAsync(command.ClassId, ct);
         if (waitingCount > 0)
         {
-            return new OperationResult<CreatedEnrollment>.Conflict(EnrollmentConflictConstants.WaitlistNotEmpty);
+            return new OperationResult<CreatedEnrollment>.Conflict(ConflictReason.WaitlistNotEmpty);
         }
 
         var enrollment = new Enrollment

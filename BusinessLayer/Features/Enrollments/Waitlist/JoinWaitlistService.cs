@@ -74,7 +74,7 @@ public sealed class JoinWaitlistService
             IdempotencyOperation.Waitlist,
             command.IdempotencyKey,
             IdempotencyService.CanonicalRequest(command.ClassId, command.Seats),
-            EnrollmentConflictConstants.IdempotencyMismatch,
+            ConflictReason.IdempotencyMismatch,
             ct);
     }
 
@@ -104,24 +104,24 @@ public sealed class JoinWaitlistService
 
         if (scheduledClass.IsCancelled)
         {
-            return new OperationResult<JoinedWaitlist>.Conflict(EnrollmentConflictConstants.ClassCancelled);
+            return new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.ClassCancelled);
         }
 
         var now = _clock.TruncateToMicroseconds();
         if (now >= scheduledClass.StartsAt)
         {
-            return new OperationResult<JoinedWaitlist>.Conflict(EnrollmentConflictConstants.ClassStarted);
+            return new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.ClassStarted);
         }
 
         var existing = await _unitOfWork.Waitlist.FindWaitingAsync(command.UserId, command.ClassId, ct);
         if (existing is not null)
         {
-            return new OperationResult<JoinedWaitlist>.Conflict(EnrollmentConflictConstants.AlreadyWaiting);
+            return new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.AlreadyWaiting);
         }
 
         if (command.Seats > scheduledClass.Capacity)
         {
-            return new OperationResult<JoinedWaitlist>.Conflict(EnrollmentConflictConstants.ExceedsCapacity);
+            return new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.ExceedsCapacity);
         }
 
         var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(command.ClassId, ct);
@@ -129,7 +129,7 @@ public sealed class JoinWaitlistService
         var waitingCount = await _unitOfWork.Waitlist.CountWaitingAsync(command.ClassId, ct);
         if (waitingCount == 0 && freeSeats >= command.Seats)
         {
-            return new OperationResult<JoinedWaitlist>.Conflict(EnrollmentConflictConstants.SeatsAvailable);
+            return new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.SeatsAvailable);
         }
 
         var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(command.UserId, ct);
@@ -141,12 +141,12 @@ public sealed class JoinWaitlistService
         var today = DateOnly.FromDateTime(now);
         if (pass.ValidUntil < today)
         {
-            return new OperationResult<JoinedWaitlist>.Conflict(EnrollmentConflictConstants.PassExpired);
+            return new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.PassExpired);
         }
 
         if (pass.RemainingVisits < command.Seats)
         {
-            return new OperationResult<JoinedWaitlist>.Conflict(EnrollmentConflictConstants.PassExhausted);
+            return new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.PassExhausted);
         }
 
         var entry = new WaitlistEntry

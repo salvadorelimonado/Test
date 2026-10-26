@@ -64,18 +64,18 @@ public sealed class ChangeSeatsService
 
         if (enrollment.Status == EnrollmentStatus.Cancelled)
         {
-            return Failed(new OperationResult<EnrollmentCard>.Conflict(EnrollmentConflictConstants.EnrollmentCancelled));
+            return Failed(new OperationResult<EnrollmentCard>.Conflict(ConflictReason.EnrollmentCancelled));
         }
 
         if (scheduledClass.IsCancelled)
         {
-            return Failed(new OperationResult<EnrollmentCard>.Conflict(EnrollmentConflictConstants.ClassCancelled));
+            return Failed(new OperationResult<EnrollmentCard>.Conflict(ConflictReason.ClassCancelled));
         }
 
         var now = _clock.TruncateToMicroseconds();
         if (now >= scheduledClass.StartsAt)
         {
-            return Failed(new OperationResult<EnrollmentCard>.Conflict(EnrollmentConflictConstants.ClassStarted));
+            return Failed(new OperationResult<EnrollmentCard>.Conflict(ConflictReason.ClassStarted));
         }
 
         var delta = command.Seats - enrollment.Seats;
@@ -130,25 +130,25 @@ public sealed class ChangeSeatsService
         var today = DateOnly.FromDateTime(now);
         if (pass.ValidUntil < today)
         {
-            return new OperationResult<EnrollmentCard>.Conflict(EnrollmentConflictConstants.PassExpired);
+            return new OperationResult<EnrollmentCard>.Conflict(ConflictReason.PassExpired);
         }
 
         if (pass.RemainingVisits < delta)
         {
-            return new OperationResult<EnrollmentCard>.Conflict(EnrollmentConflictConstants.PassExhausted);
+            return new OperationResult<EnrollmentCard>.Conflict(ConflictReason.PassExhausted);
         }
 
         var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(enrollment.ClassId, ct);
         var freeSeats = scheduledClass.Capacity - takenSeats;
         if (freeSeats < delta)
         {
-            return new OperationResult<EnrollmentCard>.Conflict(EnrollmentConflictConstants.CapacityExceeded);
+            return new OperationResult<EnrollmentCard>.Conflict(ConflictReason.CapacityExceeded);
         }
 
         var waitingCount = await _unitOfWork.Waitlist.CountWaitingAsync(enrollment.ClassId, ct);
         if (waitingCount > 0)
         {
-            return new OperationResult<EnrollmentCard>.Conflict(EnrollmentConflictConstants.WaitlistNotEmpty);
+            return new OperationResult<EnrollmentCard>.Conflict(ConflictReason.WaitlistNotEmpty);
         }
 
         return null;

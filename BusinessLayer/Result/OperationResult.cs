@@ -21,12 +21,12 @@ public abstract record OperationResult<T>
 
     public sealed record Conflict : OperationResult<T>
     {
-        public Conflict(string reason)
+        public Conflict(ConflictReason reason)
         {
-            Reason = reason ?? throw new ArgumentNullException(nameof(reason));
+            Reason = reason;
         }
 
-        public string Reason { get; }
+        public ConflictReason Reason { get; }
     }
 
     public OperationResult<TResult> Select<TResult>(Func<T, TResult> map)

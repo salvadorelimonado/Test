@@ -33,7 +33,7 @@ public sealed class IdempotencyService
         IdempotencyOperation operation,
         string idempotencyKey,
         string canonicalRequest,
-        string mismatchReason,
+        ConflictReason mismatchReason,
         CancellationToken cancellationToken)
         where TResponse : class
     {
