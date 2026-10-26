@@ -11,17 +11,23 @@ public sealed class CreateEnrollmentService
     private readonly IUnitOfWork _unitOfWork;
     private readonly TimeProvider _clock;
     private readonly IdempotencyExecution _idempotency;
+    private readonly EnrollmentCardCache _cardCache;
 
-    public CreateEnrollmentService(IUnitOfWork unitOfWork, TimeProvider clock, IdempotencyExecution idempotency)
+    public CreateEnrollmentService(
+        IUnitOfWork unitOfWork,
+        TimeProvider clock,
+        IdempotencyExecution idempotency,
+        EnrollmentCardCache cardCache)
     {
         _unitOfWork = unitOfWork;
         _clock = clock;
         _idempotency = idempotency;
+        _cardCache = cardCache;
     }
 
-    public Task<CreateEnrollmentResult> CreateAsync(CreateEnrollmentCommand command, CancellationToken ct)
+    public async Task<CreateEnrollmentResult> CreateAsync(CreateEnrollmentCommand command, CancellationToken ct)
     {
-        return _idempotency.RunAsync(
+        var result = await _idempotency.RunAsync(
             command.UserId,
             IdempotencyOperation.Enroll,
             command.IdempotencyKey,
@@ -30,6 +36,13 @@ public sealed class CreateEnrollmentService
             () => CreateEnrollmentResult.Conflict(EnrollmentConflictConstants.IdempotencyMismatch),
             token => BookAsync(command, token),
             ct);
+
+        if (result.Outcome == CreateEnrollmentOutcome.Created)
+        {
+            await _cardCache.InvalidateAsync(command.UserId, ct);
+        }
+
+        return result;
     }
 
     private async Task<IdempotencyWork<CreateEnrollmentResponse, CreateEnrollmentResult>> BookAsync(

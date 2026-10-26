@@ -8,17 +8,25 @@ public sealed class ChangeSeatsService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly TimeProvider _clock;
+    private readonly EnrollmentCardCache _cardCache;
 
-    public ChangeSeatsService(IUnitOfWork unitOfWork, TimeProvider clock)
+    public ChangeSeatsService(IUnitOfWork unitOfWork, TimeProvider clock, EnrollmentCardCache cardCache)
     {
         _unitOfWork = unitOfWork;
         _clock = clock;
+        _cardCache = cardCache;
     }
 
-    public Task<ChangeSeatsResult> ChangeAsync(ChangeSeatsCommand command, CancellationToken ct)
+    public async Task<ChangeSeatsResult> ChangeAsync(ChangeSeatsCommand command, CancellationToken ct)
     {
         var strategy = _unitOfWork.DbContext.Database.CreateExecutionStrategy();
-        return strategy.ExecuteAsync(() => ChangeInTransactionAsync(command, ct));
+        var result = await strategy.ExecuteAsync(() => ChangeInTransactionAsync(command, ct));
+        if (result.Outcome == ChangeSeatsOutcome.Succeeded)
+        {
+            await _cardCache.InvalidateAsync(command.UserId, ct);
+        }
+
+        return result;
     }
 
     private async Task<ChangeSeatsResult> ChangeInTransactionAsync(ChangeSeatsCommand command, CancellationToken ct)
@@ -137,31 +145,7 @@ public sealed class ChangeSeatsService
             throw new InvalidOperationException("Room was not found.");
         }
 
-        return new EnrollmentCard
-        {
-            Id = enrollment.Id,
-            Status = EnrollmentStatusMapping.ToContract(enrollment.Status),
-            Seats = enrollment.Seats,
-            CreatedAt = enrollment.CreatedAt,
-            Class = new EnrollmentCardClass
-            {
-                Id = scheduledClass.Id,
-                Title = scheduledClass.Title,
-                StartsAt = scheduledClass.StartsAt,
-                DurationMinutes = scheduledClass.DurationMinutes,
-                IsCancelled = scheduledClass.IsCancelled,
-                Room = new EnrollmentCardRoom
-                {
-                    Id = room.Id,
-                    Name = room.Name
-                }
-            },
-            Pass = new EnrollmentCardPass
-            {
-                RemainingVisits = pass.RemainingVisits,
-                ValidUntil = pass.ValidUntil
-            }
-        };
+        return EnrollmentCard.Create(enrollment, scheduledClass, room, pass);
     }
 
     private static DateTime TruncateToMicroseconds(DateTime value)

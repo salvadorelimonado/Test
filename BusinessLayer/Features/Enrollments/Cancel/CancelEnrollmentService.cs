@@ -1,3 +1,4 @@
+using BusinessLayer.Features.Enrollments;
 using DataAccessLayer.Entities;
 using DataAccessLayer.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
@@ -10,38 +11,49 @@ public sealed class CancelEnrollmentService
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly TimeProvider _clock;
+    private readonly EnrollmentCardCache _cardCache;
 
-    public CancelEnrollmentService(IUnitOfWork unitOfWork, TimeProvider clock)
+    public CancelEnrollmentService(IUnitOfWork unitOfWork, TimeProvider clock, EnrollmentCardCache cardCache)
     {
         _unitOfWork = unitOfWork;
         _clock = clock;
+        _cardCache = cardCache;
     }
 
-    public Task<CancelEnrollmentResult> CancelAsync(CancelEnrollmentCommand command, CancellationToken ct)
+    public async Task<CancelEnrollmentResult> CancelAsync(CancelEnrollmentCommand command, CancellationToken ct)
     {
         var strategy = _unitOfWork.DbContext.Database.CreateExecutionStrategy();
-        return strategy.ExecuteAsync(() => CancelInTransactionAsync(command, ct));
+        var attempt = await strategy.ExecuteAsync(() => CancelInTransactionAsync(command, ct));
+        if (attempt.Result.Outcome == CancelEnrollmentOutcome.Succeeded)
+        {
+            foreach (var userId in attempt.AffectedUserIds.Distinct())
+            {
+                await _cardCache.InvalidateAsync(userId, ct);
+            }
+        }
+
+        return attempt.Result;
     }
 
-    private async Task<CancelEnrollmentResult> CancelInTransactionAsync(CancelEnrollmentCommand command, CancellationToken ct)
+    private async Task<CancelAttempt> CancelInTransactionAsync(CancelEnrollmentCommand command, CancellationToken ct)
     {
         _unitOfWork.ClearChangeTracker();
         await using var transaction = await _unitOfWork.DbContext.Database.BeginTransactionAsync(ct);
-        var result = await CancelLockedAsync(command, ct);
-        if (result.Outcome == CancelEnrollmentOutcome.Succeeded)
+        var attempt = await CancelLockedAsync(command, ct);
+        if (attempt.Result.Outcome == CancelEnrollmentOutcome.Succeeded)
         {
             await transaction.CommitAsync(ct);
         }
 
-        return result;
+        return attempt;
     }
 
-    private async Task<CancelEnrollmentResult> CancelLockedAsync(CancelEnrollmentCommand command, CancellationToken ct)
+    private async Task<CancelAttempt> CancelLockedAsync(CancelEnrollmentCommand command, CancellationToken ct)
     {
         var owner = await _unitOfWork.Enrollment.FindOwnerAsync(command.EnrollmentId, ct);
         if (owner is null || owner.UserId != command.UserId)
         {
-            return CancelEnrollmentResult.NotFound();
+            return CancelAttempt.Stop(CancelEnrollmentResult.NotFound());
         }
 
         var scheduledClass = await _unitOfWork.Class.GetByIdForUpdateAsync(owner.ClassId, ct);
@@ -53,18 +65,18 @@ public sealed class CancelEnrollmentService
         var enrollment = await _unitOfWork.Enrollment.GetByIdForUpdateAsync(command.EnrollmentId, ct);
         if (enrollment is null || enrollment.UserId != command.UserId)
         {
-            return CancelEnrollmentResult.NotFound();
+            return CancelAttempt.Stop(CancelEnrollmentResult.NotFound());
         }
 
         if (enrollment.Status == EnrollmentStatus.Cancelled)
         {
-            return CancelEnrollmentResult.Succeeded(ToResponse(enrollment));
+            return CancelAttempt.Done(CancelEnrollmentResult.Succeeded(ToResponse(enrollment)), enrollment.UserId);
         }
 
         var now = TruncateToMicroseconds(_clock.GetUtcNow().UtcDateTime);
         if (!scheduledClass.IsCancelled && now >= scheduledClass.StartsAt)
         {
-            return CancelEnrollmentResult.Conflict(EnrollmentConflictConstants.ClassStarted);
+            return CancelAttempt.Stop(CancelEnrollmentResult.Conflict(EnrollmentConflictConstants.ClassStarted));
         }
 
         var waiting = scheduledClass.IsCancelled
@@ -81,13 +93,14 @@ public sealed class CancelEnrollmentService
         enrollment.CancelledAt = now;
         enrollment.RefundedVisits = refundedVisits;
 
-        if (!scheduledClass.IsCancelled)
-        {
-            await PromoteAsync(scheduledClass, waiting, passes, enrollment.Seats, now, ct);
-        }
+        var promotedUserIds = scheduledClass.IsCancelled
+            ? new List<long>()
+            : await PromoteAsync(scheduledClass, waiting, passes, enrollment.Seats, now, ct);
 
         await _unitOfWork.SaveChangesAsync(ct);
-        return CancelEnrollmentResult.Succeeded(ToResponse(enrollment));
+        var affectedUserIds = new List<long> { enrollment.UserId };
+        affectedUserIds.AddRange(promotedUserIds);
+        return CancelAttempt.Done(CancelEnrollmentResult.Succeeded(ToResponse(enrollment)), affectedUserIds);
     }
 
     private async Task<Dictionary<long, Pass>> LockPassesAsync(
@@ -127,7 +140,7 @@ public sealed class CancelEnrollmentService
         return enrollment.Seats;
     }
 
-    private async Task PromoteAsync(
+    private async Task<List<long>> PromoteAsync(
         Class scheduledClass,
         IReadOnlyList<WaitlistEntry> waiting,
         IReadOnlyDictionary<long, Pass> passes,
@@ -137,6 +150,7 @@ public sealed class CancelEnrollmentService
     {
         var today = DateOnly.FromDateTime(now);
         var remainingSeats = freedSeats;
+        var promotedUserIds = new List<long>();
         foreach (var entry in waiting)
         {
             if (entry.Seats > remainingSeats)
@@ -167,7 +181,10 @@ public sealed class CancelEnrollmentService
                 },
                 ct);
             remainingSeats -= entry.Seats;
+            promotedUserIds.Add(entry.UserId);
         }
+
+        return promotedUserIds;
     }
 
     private static CancelEnrollmentResponse ToResponse(Enrollment enrollment)
