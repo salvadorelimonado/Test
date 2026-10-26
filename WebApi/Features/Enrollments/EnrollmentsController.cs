@@ -100,7 +100,7 @@ public class EnrollmentsController : BaseApiController
         return JoinWaitlistResultToActionResultMapper.From(result);
     }
 
-    [HttpPost("waitlist/{id:long}/cancel")]
+    [HttpPost("waitlist/{id}/cancel")]
     public async Task<IActionResult> LeaveWaitlist(long id, CancellationToken ct)
     {
         if (!TryGetCurrentUserId(out var userId))
@@ -117,7 +117,7 @@ public class EnrollmentsController : BaseApiController
         return LeaveWaitlistResultToActionResultMapper.From(result);
     }
 
-    [HttpPost("{id:long}/seats")]
+    [HttpPost("{id}/seats")]
     public async Task<IActionResult> ChangeSeats(long id, [FromBody] ChangeSeatsRequest request, CancellationToken ct)
     {
         if (!TryGetCurrentUserId(out var userId))
@@ -135,7 +135,7 @@ public class EnrollmentsController : BaseApiController
         return ChangeSeatsResultToActionResultMapper.From(result);
     }
 
-    [HttpPost("{id:long}/cancel")]
+    [HttpPost("{id}/cancel")]
     public async Task<IActionResult> Cancel(long id, CancellationToken ct)
     {
         if (!TryGetCurrentUserId(out var userId))
@@ -152,7 +152,7 @@ public class EnrollmentsController : BaseApiController
         return CancelEnrollmentResultToActionResultMapper.From(result);
     }
 
-    [HttpGet("{id:long}")]
+    [HttpGet("{id}")]
     public async Task<IActionResult> Get(long id, CancellationToken ct)
     {
         if (!TryGetCurrentUserId(out var userId))
