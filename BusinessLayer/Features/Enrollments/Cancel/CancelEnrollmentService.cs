@@ -79,11 +79,8 @@ public sealed class CancelEnrollmentService
             return CancelAttempt.Stop(CancelEnrollmentResult.Conflict(EnrollmentConflictConstants.ClassStarted));
         }
 
-        var waiting = scheduledClass.IsCancelled
-            ? new List<WaitlistEntry>()
-            : await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct);
-        var passes = await LockPassesAsync(enrollment.UserId, waiting, ct);
-        if (!passes.TryGetValue(enrollment.UserId, out var pass))
+        var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(enrollment.UserId, ct);
+        if (pass is null)
         {
             throw new InvalidOperationException("Pass was not found.");
         }
@@ -92,40 +89,16 @@ public sealed class CancelEnrollmentService
         enrollment.Status = EnrollmentStatus.Cancelled;
         enrollment.CancelledAt = now;
         enrollment.RefundedVisits = refundedVisits;
-
-        var promotedUserIds = scheduledClass.IsCancelled
-            ? new List<long>()
-            : await PromoteAsync(scheduledClass, waiting, passes, enrollment.Seats, now, ct);
-
         await _unitOfWork.SaveChangesAsync(ct);
+
+        var promotedUserIds = await PromoteAsync(scheduledClass, now, ct);
+        if (promotedUserIds.Count > 0)
+        {
+            await _unitOfWork.SaveChangesAsync(ct);
+        }
         var affectedUserIds = new List<long> { enrollment.UserId };
         affectedUserIds.AddRange(promotedUserIds);
         return CancelAttempt.Done(CancelEnrollmentResult.Succeeded(ToResponse(enrollment)), affectedUserIds);
-    }
-
-    private async Task<Dictionary<long, Pass>> LockPassesAsync(
-        long ownerUserId,
-        IReadOnlyList<WaitlistEntry> waiting,
-        CancellationToken ct)
-    {
-        var userIds = waiting
-            .Select(entry => entry.UserId)
-            .Append(ownerUserId)
-            .Distinct()
-            .OrderBy(userId => userId);
-        var passes = new Dictionary<long, Pass>();
-        foreach (var userId in userIds)
-        {
-            var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(userId, ct);
-            if (pass is null)
-            {
-                throw new InvalidOperationException("Pass was not found.");
-            }
-
-            passes.Add(userId, pass);
-        }
-
-        return passes;
     }
 
     private static int Refund(Class scheduledClass, Enrollment enrollment, Pass pass, DateTime now)
@@ -140,16 +113,57 @@ public sealed class CancelEnrollmentService
         return enrollment.Seats;
     }
 
-    private async Task<List<long>> PromoteAsync(
+    private async Task<IReadOnlyList<long>> PromoteAsync(Class scheduledClass, DateTime now, CancellationToken ct)
+    {
+        if (scheduledClass.IsCancelled)
+        {
+            return [];
+        }
+
+        var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(scheduledClass.Id, ct);
+        var freeSeats = scheduledClass.Capacity - takenSeats;
+        if (freeSeats <= 0)
+        {
+            return [];
+        }
+
+        var waiting = await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct);
+        if (waiting.Count == 0)
+        {
+            return [];
+        }
+
+        var passes = await LockPassesAsync(waiting, ct);
+        return await AssignAsync(scheduledClass, waiting, passes, freeSeats, now, ct);
+    }
+
+    private async Task<Dictionary<long, Pass>> LockPassesAsync(IReadOnlyList<WaitlistEntry> waiting, CancellationToken ct)
+    {
+        var passes = new Dictionary<long, Pass>();
+        foreach (var userId in waiting.Select(entry => entry.UserId).Distinct().OrderBy(userId => userId))
+        {
+            var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(userId, ct);
+            if (pass is null)
+            {
+                throw new InvalidOperationException("Pass was not found.");
+            }
+
+            passes.Add(userId, pass);
+        }
+
+        return passes;
+    }
+
+    private async Task<List<long>> AssignAsync(
         Class scheduledClass,
         IReadOnlyList<WaitlistEntry> waiting,
         IReadOnlyDictionary<long, Pass> passes,
-        int freedSeats,
+        int freeSeats,
         DateTime now,
         CancellationToken ct)
     {
         var today = DateOnly.FromDateTime(now);
-        var remainingSeats = freedSeats;
+        var remainingSeats = freeSeats;
         var promotedUserIds = new List<long>();
         foreach (var entry in waiting)
         {

@@ -1,3 +1,4 @@
+using BusinessLayer.Features.Enrollments;
 using DataAccessLayer.Entities;
 using DataAccessLayer.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
@@ -20,34 +21,37 @@ public sealed class ChangeSeatsService
     public async Task<ChangeSeatsResult> ChangeAsync(ChangeSeatsCommand command, CancellationToken ct)
     {
         var strategy = _unitOfWork.DbContext.Database.CreateExecutionStrategy();
-        var result = await strategy.ExecuteAsync(() => ChangeInTransactionAsync(command, ct));
-        if (result.Outcome == ChangeSeatsOutcome.Succeeded)
+        var attempt = await strategy.ExecuteAsync(() => ChangeInTransactionAsync(command, ct));
+        if (attempt.Result.Outcome == ChangeSeatsOutcome.Succeeded)
         {
-            await _cardCache.InvalidateAsync(command.UserId, ct);
+            foreach (var userId in attempt.AffectedUserIds.Distinct())
+            {
+                await _cardCache.InvalidateAsync(userId, ct);
+            }
         }
 
-        return result;
+        return attempt.Result;
     }
 
-    private async Task<ChangeSeatsResult> ChangeInTransactionAsync(ChangeSeatsCommand command, CancellationToken ct)
+    private async Task<ChangeAttempt> ChangeInTransactionAsync(ChangeSeatsCommand command, CancellationToken ct)
     {
         _unitOfWork.ClearChangeTracker();
         await using var transaction = await _unitOfWork.DbContext.Database.BeginTransactionAsync(ct);
-        var result = await ChangeLockedAsync(command, ct);
-        if (result.Outcome == ChangeSeatsOutcome.Succeeded)
+        var attempt = await ChangeLockedAsync(command, ct);
+        if (attempt.Result.Outcome == ChangeSeatsOutcome.Succeeded)
         {
             await transaction.CommitAsync(ct);
         }
 
-        return result;
+        return attempt;
     }
 
-    private async Task<ChangeSeatsResult> ChangeLockedAsync(ChangeSeatsCommand command, CancellationToken ct)
+    private async Task<ChangeAttempt> ChangeLockedAsync(ChangeSeatsCommand command, CancellationToken ct)
     {
         var owner = await _unitOfWork.Enrollment.FindOwnerAsync(command.EnrollmentId, ct);
         if (owner is null || owner.UserId != command.UserId)
         {
-            return ChangeSeatsResult.NotFound();
+            return Failed(ChangeSeatsResult.NotFound());
         }
 
         var scheduledClass = await _unitOfWork.Class.GetByIdForUpdateAsync(owner.ClassId, ct);
@@ -65,23 +69,23 @@ public sealed class ChangeSeatsService
         var enrollment = await _unitOfWork.Enrollment.GetByIdForUpdateAsync(command.EnrollmentId, ct);
         if (enrollment is null || enrollment.UserId != command.UserId)
         {
-            return ChangeSeatsResult.NotFound();
+            return Failed(ChangeSeatsResult.NotFound());
         }
 
         if (enrollment.Status == EnrollmentStatus.Cancelled)
         {
-            return ChangeSeatsResult.Conflict(EnrollmentConflictConstants.EnrollmentCancelled);
+            return Failed(ChangeSeatsResult.Conflict(EnrollmentConflictConstants.EnrollmentCancelled));
         }
 
         if (scheduledClass.IsCancelled)
         {
-            return ChangeSeatsResult.Conflict(EnrollmentConflictConstants.ClassCancelled);
+            return Failed(ChangeSeatsResult.Conflict(EnrollmentConflictConstants.ClassCancelled));
         }
 
         var now = TruncateToMicroseconds(_clock.GetUtcNow().UtcDateTime);
         if (now >= scheduledClass.StartsAt)
         {
-            return ChangeSeatsResult.Conflict(EnrollmentConflictConstants.ClassStarted);
+            return Failed(ChangeSeatsResult.Conflict(EnrollmentConflictConstants.ClassStarted));
         }
 
         var delta = command.Seats - enrollment.Seats;
@@ -90,10 +94,11 @@ public sealed class ChangeSeatsService
             var rejection = await RejectIncreaseAsync(scheduledClass, pass, enrollment, delta, now, ct);
             if (rejection is not null)
             {
-                return rejection;
+                return Failed(rejection);
             }
         }
 
+        var promotedUserIds = new List<long>();
         if (delta != 0)
         {
             enrollment.Seats = command.Seats;
@@ -101,9 +106,28 @@ public sealed class ChangeSeatsService
             await _unitOfWork.SaveChangesAsync(ct);
         }
 
+        if (delta < 0)
+        {
+            var promoted = await PromoteAsync(scheduledClass, now, ct);
+            promotedUserIds.AddRange(promoted);
+            if (promotedUserIds.Count > 0)
+            {
+                await _unitOfWork.SaveChangesAsync(ct);
+            }
+        }
+
         var card = await CardAsync(enrollment, scheduledClass, pass, ct);
-        return ChangeSeatsResult.Succeeded(card);
+        var affectedUserIds = new List<long> { command.UserId };
+        affectedUserIds.AddRange(promotedUserIds);
+        return new ChangeAttempt(ChangeSeatsResult.Succeeded(card), affectedUserIds);
     }
+
+    private static ChangeAttempt Failed(ChangeSeatsResult result)
+    {
+        return new ChangeAttempt(result, []);
+    }
+
+    private sealed record ChangeAttempt(ChangeSeatsResult Result, IReadOnlyList<long> AffectedUserIds);
 
     private async Task<ChangeSeatsResult?> RejectIncreaseAsync(
         Class scheduledClass,
@@ -131,6 +155,94 @@ public sealed class ChangeSeatsService
         }
 
         return null;
+    }
+
+    private async Task<IReadOnlyList<long>> PromoteAsync(Class scheduledClass, DateTime now, CancellationToken ct)
+    {
+        if (scheduledClass.IsCancelled)
+        {
+            return [];
+        }
+
+        var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(scheduledClass.Id, ct);
+        var freeSeats = scheduledClass.Capacity - takenSeats;
+        if (freeSeats <= 0)
+        {
+            return [];
+        }
+
+        var waiting = await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct);
+        if (waiting.Count == 0)
+        {
+            return [];
+        }
+
+        var passes = await LockPassesAsync(waiting, ct);
+        return await AssignAsync(scheduledClass, waiting, passes, freeSeats, now, ct);
+    }
+
+    private async Task<Dictionary<long, Pass>> LockPassesAsync(IReadOnlyList<WaitlistEntry> waiting, CancellationToken ct)
+    {
+        var passes = new Dictionary<long, Pass>();
+        foreach (var userId in waiting.Select(entry => entry.UserId).Distinct().OrderBy(userId => userId))
+        {
+            var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(userId, ct);
+            if (pass is null)
+            {
+                throw new InvalidOperationException("Pass was not found.");
+            }
+
+            passes.Add(userId, pass);
+        }
+
+        return passes;
+    }
+
+    private async Task<List<long>> AssignAsync(
+        Class scheduledClass,
+        IReadOnlyList<WaitlistEntry> waiting,
+        IReadOnlyDictionary<long, Pass> passes,
+        int freeSeats,
+        DateTime now,
+        CancellationToken ct)
+    {
+        var today = DateOnly.FromDateTime(now);
+        var remainingSeats = freeSeats;
+        var promotedUserIds = new List<long>();
+        foreach (var entry in waiting)
+        {
+            if (entry.Seats > remainingSeats)
+            {
+                break;
+            }
+
+            if (!passes.TryGetValue(entry.UserId, out var pass))
+            {
+                throw new InvalidOperationException("Pass was not found.");
+            }
+
+            if (pass.ValidUntil < today || pass.RemainingVisits < entry.Seats)
+            {
+                continue;
+            }
+
+            pass.RemainingVisits -= entry.Seats;
+            entry.Status = WaitlistStatus.Promoted;
+            await _unitOfWork.Enrollment.CreateAsync(
+                new Enrollment
+                {
+                    UserId = entry.UserId,
+                    ClassId = scheduledClass.Id,
+                    Seats = entry.Seats,
+                    Status = EnrollmentStatus.Active,
+                    CreatedAt = now
+                },
+                ct);
+            remainingSeats -= entry.Seats;
+            promotedUserIds.Add(entry.UserId);
+        }
+
+        return promotedUserIds;
     }
 
     private async Task<EnrollmentCard> CardAsync(
