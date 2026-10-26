@@ -14,8 +14,8 @@ public class EnrollmentConfiguration : IEntityTypeConfiguration<Enrollment>
 
         builder.Property(x => x.Status)
             .HasConversion(
-                status => EnrollmentStatusMapping.ToContract(status),
-                value => EnrollmentStatusMapping.FromContract(value))
+                status => EnrollmentStatusMapping.ToDatabase(status),
+                value => EnrollmentStatusMapping.FromDatabase(value))
             .IsRequired();
 
         builder
