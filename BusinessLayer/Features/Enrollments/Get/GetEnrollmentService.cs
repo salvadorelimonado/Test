@@ -32,30 +32,12 @@ public sealed class GetEnrollmentService
 
     private async Task<EnrollmentCard?> LoadAsync(GetEnrollmentQuery query, CancellationToken ct)
     {
-        var enrollment = await _unitOfWork.Enrollment.GetByIdAsync(query.EnrollmentId, ct);
-        if (enrollment is null || enrollment.UserId != query.UserId)
+        var row = await _unitOfWork.Enrollment.FindCardAsync(query.EnrollmentId, query.UserId, ct);
+        if (row is null)
         {
             return null;
         }
 
-        var scheduledClass = await _unitOfWork.Class.GetByIdAsync(enrollment.ClassId, ct);
-        if (scheduledClass is null)
-        {
-            throw new InvalidOperationException("Class was not found.");
-        }
-
-        var room = await _unitOfWork.Room.GetByIdAsync(scheduledClass.RoomId, ct);
-        if (room is null)
-        {
-            throw new InvalidOperationException("Room was not found.");
-        }
-
-        var pass = await _unitOfWork.Pass.GetByUserAsync(query.UserId, ct);
-        if (pass is null)
-        {
-            throw new InvalidOperationException("Pass was not found.");
-        }
-
-        return EnrollmentCard.Create(enrollment, scheduledClass, room, pass);
+        return EnrollmentCard.Create(row);
     }
 }

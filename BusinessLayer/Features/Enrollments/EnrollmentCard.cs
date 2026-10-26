@@ -1,4 +1,5 @@
 using DataAccessLayer.Entities;
+using DataAccessLayer.Repositories;
 
 namespace BusinessLayer.Features.Enrollments;
 
@@ -16,25 +17,31 @@ public sealed class EnrollmentCard
 
     public required EnrollmentCardPass Pass { get; init; }
 
-    public static EnrollmentCard Create(Enrollment enrollment, Class scheduledClass, Room room, Pass pass)
+    public static EnrollmentCard Create(EnrollmentCardRow row)
     {
+        if (row is null)
+        {
+            throw new ArgumentNullException(nameof(row));
+        }
+
+        var pass = row.Pass ?? throw new InvalidOperationException("Pass was not found.");
         return new EnrollmentCard
         {
-            Id = enrollment.Id,
-            Status = enrollment.Status,
-            Seats = enrollment.Seats,
-            CreatedAt = enrollment.CreatedAt,
+            Id = row.Id,
+            Status = row.Status,
+            Seats = row.Seats,
+            CreatedAt = row.CreatedAt,
             Class = new EnrollmentCardClass
             {
-                Id = scheduledClass.Id,
-                Title = scheduledClass.Title,
-                StartsAt = scheduledClass.StartsAt,
-                DurationMinutes = scheduledClass.DurationMinutes,
-                IsCancelled = scheduledClass.IsCancelled,
+                Id = row.ClassId,
+                Title = row.Title,
+                StartsAt = row.StartsAt,
+                DurationMinutes = row.DurationMinutes,
+                IsCancelled = row.IsCancelled,
                 Room = new EnrollmentCardRoom
                 {
-                    Id = room.Id,
-                    Name = room.Name
+                    Id = row.RoomId,
+                    Name = row.RoomName
                 }
             },
             Pass = new EnrollmentCardPass

@@ -106,7 +106,7 @@ public sealed class ChangeSeatsService
             }
         }
 
-        var card = await CardAsync(enrollment, scheduledClass, pass, ct);
+        var card = await CardAsync(enrollment.Id, command.UserId, ct);
         var affectedUserIds = new List<long> { command.UserId };
         affectedUserIds.AddRange(promotedUserIds);
         return new ChangeAttempt(new OperationResult<EnrollmentCard>.Ok(card), affectedUserIds);
@@ -174,14 +174,28 @@ public sealed class ChangeSeatsService
             return [];
         }
 
-        var passes = await LockPassesAsync(waiting, ct);
+        var passes = await LockPassesAsync(waiting, freeSeats, ct);
         return await AssignAsync(scheduledClass, waiting, passes, freeSeats, now, ct);
     }
 
-    private async Task<Dictionary<long, Pass>> LockPassesAsync(IReadOnlyList<WaitlistEntry> waiting, CancellationToken ct)
+    private async Task<Dictionary<long, Pass>> LockPassesAsync(
+        IReadOnlyList<WaitlistEntry> waiting,
+        int freeSeats,
+        CancellationToken ct)
     {
+        var userIds = new List<long>();
+        foreach (var entry in waiting)
+        {
+            if (entry.Seats > freeSeats)
+            {
+                break;
+            }
+
+            userIds.Add(entry.UserId);
+        }
+
         var passes = new Dictionary<long, Pass>();
-        foreach (var userId in waiting.Select(entry => entry.UserId).Distinct().OrderBy(userId => userId))
+        foreach (var userId in userIds.Distinct().OrderBy(id => id))
         {
             var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(userId, ct);
             if (pass is null)
@@ -243,18 +257,14 @@ public sealed class ChangeSeatsService
         return promotedUserIds;
     }
 
-    private async Task<EnrollmentCard> CardAsync(
-        Enrollment enrollment,
-        Class scheduledClass,
-        Pass pass,
-        CancellationToken ct)
+    private async Task<EnrollmentCard> CardAsync(long enrollmentId, long userId, CancellationToken ct)
     {
-        var room = await _unitOfWork.Room.GetByIdAsync(scheduledClass.RoomId, ct);
-        if (room is null)
+        var row = await _unitOfWork.Enrollment.FindCardAsync(enrollmentId, userId, ct);
+        if (row is null)
         {
-            throw new InvalidOperationException("Room was not found.");
+            throw new InvalidOperationException("Enrollment was not found.");
         }
 
-        return EnrollmentCard.Create(enrollment, scheduledClass, room, pass);
+        return EnrollmentCard.Create(row);
     }
 }

@@ -133,14 +133,28 @@ public sealed class CancelEnrollmentService
             return [];
         }
 
-        var passes = await LockPassesAsync(stillWaiting, ct);
+        var passes = await LockPassesAsync(stillWaiting, freeSeats, ct);
         return await AssignAsync(scheduledClass, stillWaiting, passes, freeSeats, now, ct);
     }
 
-    private async Task<Dictionary<long, Pass>> LockPassesAsync(IReadOnlyList<WaitlistEntry> waiting, CancellationToken ct)
+    private async Task<Dictionary<long, Pass>> LockPassesAsync(
+        IReadOnlyList<WaitlistEntry> waiting,
+        int freeSeats,
+        CancellationToken ct)
     {
+        var userIds = new List<long>();
+        foreach (var entry in waiting)
+        {
+            if (entry.Seats > freeSeats)
+            {
+                break;
+            }
+
+            userIds.Add(entry.UserId);
+        }
+
         var passes = new Dictionary<long, Pass>();
-        foreach (var userId in waiting.Select(entry => entry.UserId).Distinct().OrderBy(userId => userId))
+        foreach (var userId in userIds.Distinct().OrderBy(id => id))
         {
             var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(userId, ct);
             if (pass is null)

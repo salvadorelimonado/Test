@@ -29,12 +29,6 @@ public sealed class LeaveWaitlistService
             return NotFound();
         }
 
-        var scheduledClass = await _unitOfWork.Class.GetByIdForUpdateAsync(owner.ClassId, ct);
-        if (scheduledClass is null)
-        {
-            throw new InvalidOperationException("Class was not found.");
-        }
-
         var entry = await _unitOfWork.Waitlist.GetByIdForUpdateAsync(command.EntryId, ct);
         if (entry is null || entry.UserId != command.UserId)
         {

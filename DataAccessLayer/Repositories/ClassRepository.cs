@@ -105,54 +105,26 @@ public class ClassRepository : GenericRepository<Class>, IClassRepository
             query = query.Where(scheduledClass => scheduledClass.RoomId == selectedRoomId);
         }
 
-        var groups = await query
+        return await query
             .GroupBy(scheduledClass => new
             {
                 Day = scheduledClass.StartsAt.Date,
                 scheduledClass.RoomId,
                 RoomName = scheduledClass.Room.Name
             })
+            .OrderBy(group => group.Key.Day)
+            .ThenBy(group => group.Key.RoomId)
             .Select(group => new ClassLoadRow
             {
                 Day = group.Key.Day,
                 RoomId = group.Key.RoomId,
                 RoomName = group.Key.RoomName,
                 ClassesCount = group.Count(),
-                TotalCapacity = group.Sum(scheduledClass => scheduledClass.Capacity)
+                TotalCapacity = group.Sum(scheduledClass => scheduledClass.Capacity),
+                BookedSeats = group.Sum(scheduledClass => scheduledClass.Enrollments
+                    .Where(enrollment => enrollment.Status == EnrollmentStatus.Active)
+                    .Sum(enrollment => (int?)enrollment.Seats) ?? 0)
             })
             .ToListAsync(ct);
-
-        var bookedSeats = await query
-            .SelectMany(scheduledClass => scheduledClass.Enrollments)
-            .Where(enrollment => enrollment.Status == EnrollmentStatus.Active)
-            .GroupBy(enrollment => new
-            {
-                Day = enrollment.Class.StartsAt.Date,
-                enrollment.Class.RoomId
-            })
-            .Select(group => new
-            {
-                group.Key.Day,
-                group.Key.RoomId,
-                Seats = group.Sum(enrollment => enrollment.Seats)
-            })
-            .ToListAsync(ct);
-
-        var seatsByDayAndRoom = bookedSeats.ToDictionary(
-            row => (DateOnly.FromDateTime(row.Day), row.RoomId),
-            row => row.Seats);
-
-        foreach (var group in groups)
-        {
-            if (seatsByDayAndRoom.TryGetValue((DateOnly.FromDateTime(group.Day), group.RoomId), out var seats))
-            {
-                group.BookedSeats = seats;
-            }
-        }
-
-        return groups
-            .OrderBy(group => group.Day)
-            .ThenBy(group => group.RoomId)
-            .ToList();
     }
 }
