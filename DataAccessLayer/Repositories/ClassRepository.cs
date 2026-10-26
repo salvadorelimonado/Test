@@ -85,12 +85,12 @@ public class ClassRepository : GenericRepository<Class>, IClassRepository
         CancellationToken ct = default)
     {
         var fromInstant = from.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
-        var toExclusive = to.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        var toInstant = to.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
         var query = _dbSet
             .AsNoTracking()
             .Where(scheduledClass => !scheduledClass.IsCancelled
                 && scheduledClass.StartsAt >= fromInstant
-                && scheduledClass.StartsAt < toExclusive);
+                && scheduledClass.StartsAt.Date <= toInstant);
 
         if (roomId is long selectedRoomId)
         {
