@@ -12,5 +12,7 @@ public static class EnrollmentConflictConstants
 
     public const string ClassCancelled = "class-cancelled";
 
+    public const string EnrollmentCancelled = "enrollment-cancelled";
+
     public const string IdempotencyMismatch = "idempotency-mismatch";
 }
