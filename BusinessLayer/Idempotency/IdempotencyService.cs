@@ -1,14 +1,12 @@
-using System.Data;
-using System.Data.Common;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using BusinessLayer.Extensions;
 using BusinessLayer.Result;
 using DataAccessLayer.Entities;
 using DataAccessLayer.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
 
 namespace BusinessLayer.Idempotency;
 
@@ -28,19 +26,34 @@ public sealed class IdempotencyService
         return string.Create(CultureInfo.InvariantCulture, $"{classId}:{seats}");
     }
 
+    public async Task LockAsync(
+        long userId,
+        IdempotencyOperation operation,
+        string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        if (_unitOfWork.DbContext.Database.CurrentTransaction is null)
+        {
+            throw new InvalidOperationException("An idempotency lock requires a transaction.");
+        }
+
+        var keyHash = Hash(idempotencyKey);
+        var operationCode = (int)operation;
+        await _unitOfWork.DbContext.Database.ExecuteSqlAsync(
+            $"SELECT pg_advisory_xact_lock(hashtextextended({userId}::text || ':' || {operationCode}::text || ':' || encode({keyHash}, 'hex'), 0))",
+            cancellationToken);
+    }
+
     public async Task<OperationResult<TResponse>?> FindAsync<TResponse>(
         long userId,
         IdempotencyOperation operation,
         string idempotencyKey,
         string canonicalRequest,
-        ConflictReason mismatchReason,
         CancellationToken cancellationToken)
         where TResponse : class
     {
         var keyHash = Hash(idempotencyKey);
         var requestHash = Hash(canonicalRequest);
-        await LockSameKeyAsync(userId, operation, keyHash, cancellationToken);
-
         var existing = await _unitOfWork.Idempotency.FindAsync(userId, operation, keyHash, cancellationToken);
         if (existing is null)
         {
@@ -49,7 +62,7 @@ public sealed class IdempotencyService
 
         if (!existing.RequestHash.AsSpan().SequenceEqual(requestHash))
         {
-            return new OperationResult<TResponse>.Conflict(mismatchReason);
+            return new OperationResult<TResponse>.Conflict(ConflictReason.IdempotencyMismatch);
         }
 
         var response = JsonSerializer.Deserialize<TResponse>(existing.ResponseBody, JsonSerializerOptions.Web);
@@ -75,7 +88,6 @@ public sealed class IdempotencyService
             throw new ArgumentNullException(nameof(response));
         }
 
-        var now = _clock.GetUtcNow().UtcDateTime;
         var record = new IdempotencyRecord
         {
             UserId = userId,
@@ -83,43 +95,11 @@ public sealed class IdempotencyService
             KeyHash = Hash(idempotencyKey),
             RequestHash = Hash(canonicalRequest),
             ResponseBody = JsonSerializer.Serialize(response, JsonSerializerOptions.Web),
-            CreatedAt = new DateTime(now.Ticks - now.Ticks % 10, DateTimeKind.Utc)
+            CreatedAt = _clock.TruncateToMicroseconds()
         };
 
         await _unitOfWork.Idempotency.CreateAsync(record, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
-    }
-
-    private async Task LockSameKeyAsync(
-        long userId,
-        IdempotencyOperation operation,
-        byte[] keyHash,
-        CancellationToken cancellationToken)
-    {
-        var transaction = _unitOfWork.DbContext.Database.CurrentTransaction;
-        if (transaction is null)
-        {
-            return;
-        }
-
-        var connection = _unitOfWork.DbContext.Database.GetDbConnection();
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction.GetDbTransaction();
-        command.CommandText =
-            "SELECT pg_advisory_xact_lock(hashtextextended(@userId::text || ':' || @operation::text || ':' || encode(@key, 'hex'), 0))";
-        AddParameter(command, "userId", DbType.Int64, userId);
-        AddParameter(command, "operation", DbType.Int32, (int)operation);
-        AddParameter(command, "key", DbType.Binary, keyHash);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-    }
-
-    private static void AddParameter(DbCommand command, string name, DbType type, object value)
-    {
-        var parameter = command.CreateParameter();
-        parameter.ParameterName = name;
-        parameter.DbType = type;
-        parameter.Value = value;
-        command.Parameters.Add(parameter);
     }
 
     private static byte[] Hash(string value)

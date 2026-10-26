@@ -43,6 +43,8 @@ public sealed class CreateEnrollmentService
             exception,
             IdempotencyRecord.KeyIndexName))
         {
+            // решение: advisory lock сериализует один и тот же ключ, поэтому эта ветка почти недостижима.
+            // Оставлена как страховка, если уникальный индекс всё же сработает.
             _unitOfWork.ClearChangeTracker();
             var replayed = await ReplayAsync(command, ct);
             if (replayed is OperationResult<CreatedEnrollment>.Ok)
@@ -70,6 +72,11 @@ public sealed class CreateEnrollmentService
         CreateEnrollmentCommand command,
         CancellationToken ct)
     {
+        await _idempotency.LockAsync(
+            command.UserId,
+            IdempotencyOperation.Enroll,
+            command.IdempotencyKey,
+            ct);
         var stored = await FindAsync(command, ct);
         if (stored is not null)
         {
@@ -100,7 +107,6 @@ public sealed class CreateEnrollmentService
             IdempotencyOperation.Enroll,
             command.IdempotencyKey,
             IdempotencyService.CanonicalRequest(command.ClassId, command.Seats),
-            ConflictReason.IdempotencyMismatch,
             ct);
     }
 

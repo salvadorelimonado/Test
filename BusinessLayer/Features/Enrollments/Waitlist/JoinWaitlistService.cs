@@ -42,6 +42,8 @@ public sealed class JoinWaitlistService
             exception,
             IdempotencyRecord.KeyIndexName))
         {
+            // решение: advisory lock сериализует один и тот же ключ, поэтому эта ветка почти недостижима.
+            // Оставлена как страховка, если уникальный индекс всё же сработает.
             _unitOfWork.ClearChangeTracker();
             return await ReplayAsync(command, ct);
         }
@@ -58,6 +60,11 @@ public sealed class JoinWaitlistService
         JoinWaitlistCommand command,
         CancellationToken ct)
     {
+        await _idempotency.LockAsync(
+            command.UserId,
+            IdempotencyOperation.Waitlist,
+            command.IdempotencyKey,
+            ct);
         var stored = await FindAsync(command, ct);
         if (stored is not null)
         {
@@ -88,7 +95,6 @@ public sealed class JoinWaitlistService
             IdempotencyOperation.Waitlist,
             command.IdempotencyKey,
             IdempotencyService.CanonicalRequest(command.ClassId, command.Seats),
-            ConflictReason.IdempotencyMismatch,
             ct);
     }
 
