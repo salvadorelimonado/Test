@@ -1,5 +1,6 @@
 using System.Data;
 using System.Data.Common;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -20,6 +21,11 @@ public sealed class IdempotencyService
     {
         _unitOfWork = unitOfWork;
         _clock = clock;
+    }
+
+    public static string CanonicalRequest(long classId, int seats)
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"{classId}:{seats}");
     }
 
     public async Task<OperationResult<TResponse>?> FindAsync<TResponse>(
