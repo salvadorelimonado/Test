@@ -61,10 +61,12 @@ public sealed class LeaveWaitlistService
         switch (entry.Status)
         {
             case WaitlistStatus.Promoted:
+                // решение: своя причина already-promoted. Если бронь уже создана, в ответ добавляется promotedEnrollmentId.
                 return Stop(AlreadyPromoted(entry.PromotedEnrollmentId));
             case WaitlistStatus.Cancelled:
-            case WaitlistStatus.Skipped:
                 return Done(ToResponse(entry), []);
+            case WaitlistStatus.Skipped:
+                return Done(ToResponse(entry.Id, WaitlistStatus.Cancelled), []);
             case WaitlistStatus.Waiting:
                 entry.Status = WaitlistStatus.Cancelled;
                 await _unitOfWork.SaveChangesAsync(ct);
@@ -111,11 +113,6 @@ public sealed class LeaveWaitlistService
 
         var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(scheduledClass.Id, ct);
         var freeSeats = scheduledClass.Capacity - takenSeats;
-        if (freeSeats <= 0)
-        {
-            return WaitlistFillResult.None;
-        }
-
         var waiting = await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct);
         if (waiting.Count == 0)
         {
@@ -123,7 +120,7 @@ public sealed class LeaveWaitlistService
         }
 
         var passes = await _unitOfWork.Pass.GetByUsersForUpdateAsync(
-            WaitlistFillResult.PassIdsToLock(waiting, freeSeats, null),
+            WaitlistFillResult.PassIdsToLock(waiting, null),
             ct);
         var result = WaitlistFillResult.Fill(scheduledClass, waiting, passes, freeSeats, now);
         if (result.Changed)
@@ -151,10 +148,15 @@ public sealed class LeaveWaitlistService
 
     private static LeftWaitlist ToResponse(WaitlistEntry entry)
     {
+        return ToResponse(entry.Id, entry.Status);
+    }
+
+    private static LeftWaitlist ToResponse(long entryId, WaitlistStatus status)
+    {
         return new LeftWaitlist
         {
-            Id = entry.Id,
-            Status = entry.Status
+            Id = entryId,
+            Status = status
         };
     }
 

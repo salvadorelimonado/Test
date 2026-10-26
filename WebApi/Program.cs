@@ -64,7 +64,7 @@ builder.Services.AddScoped<LeaveWaitlistService>();
 builder.Services.AddScoped<GetScheduleService>();
 builder.Services.AddScoped<GetLoadService>();
 
-ApiRateLimit.Add(builder.Services);
+builder.Services.AddApiRateLimit();
 
 builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
     ConnectionMultiplexer.Connect(builder.Configuration.GetConnectionString("Redis")!));

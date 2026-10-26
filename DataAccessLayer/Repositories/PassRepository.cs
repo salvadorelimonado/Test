@@ -27,18 +27,20 @@ public class PassRepository : GenericRepository<Pass>, IPassRepository
         IReadOnlyList<long> userIds,
         CancellationToken ct = default)
     {
-        var passes = new Dictionary<long, Pass>();
-        foreach (var userId in userIds)
+        if (userIds.Count == 0)
         {
-            var pass = await GetByUserForUpdateAsync(userId, ct);
-            if (pass is null)
-            {
-                throw new InvalidOperationException("Pass was not found.");
-            }
-
-            passes.Add(userId, pass);
+            return new Dictionary<long, Pass>();
         }
 
-        return passes;
+        var ids = userIds.Distinct().ToArray();
+        var passes = await _dbSet
+            .FromSql($"SELECT * FROM passes WHERE user_id = ANY({ids}) ORDER BY user_id FOR UPDATE")
+            .ToListAsync(ct);
+        if (passes.Count != ids.Length)
+        {
+            throw new InvalidOperationException("Pass was not found.");
+        }
+
+        return passes.ToDictionary(pass => pass.UserId);
     }
 }

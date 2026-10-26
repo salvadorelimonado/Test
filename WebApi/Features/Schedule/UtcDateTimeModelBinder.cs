@@ -68,6 +68,7 @@ public sealed class UtcDateTimeModelBinder : IModelBinder
         var date = Date.Parse(text);
         if (date.Success)
         {
+            // решение: дата без времени — полночь UTC, граница расписания совпадает с началом суток.
             return TrySet(date.Value.AtMidnight().WithOffset(Offset.Zero).ToInstant(), out utc);
         }
 

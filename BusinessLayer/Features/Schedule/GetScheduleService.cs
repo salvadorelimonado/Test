@@ -12,9 +12,9 @@ public sealed class GetScheduleService
         _unitOfWork = unitOfWork;
     }
 
-    public async Task<List<ClassScheduleRow>> GetAsync(GetScheduleQuery query, CancellationToken ct)
+    public async Task<SchedulePageResult> GetAsync(GetScheduleQuery query, CancellationToken ct)
     {
-        return await _unitOfWork.Class.ListScheduleAsync(
+        var rows = await _unitOfWork.Class.ListScheduleAsync(
             query.From,
             query.To,
             query.RoomId,
@@ -23,5 +23,22 @@ public sealed class GetScheduleService
             query.Cursor?.ClassId,
             query.Limit + 1,
             ct);
+        var hasContinuation = rows.Count > query.Limit;
+        if (hasContinuation)
+        {
+            rows.RemoveAt(rows.Count - 1);
+        }
+
+        foreach (var row in rows)
+        {
+            var freeSeats = row.Capacity - row.TakenSeats;
+            row.FreeSeats = freeSeats > 0 ? freeSeats : 0;
+        }
+
+        return new SchedulePageResult
+        {
+            Items = rows,
+            HasContinuation = hasContinuation
+        };
     }
 }

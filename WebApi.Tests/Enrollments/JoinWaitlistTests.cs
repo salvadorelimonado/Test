@@ -433,7 +433,7 @@ public class JoinWaitlistTests : ClubTest
     }
 
     [TestMethod]
-    public async Task Join_WhenSomeoneIsAlreadyWaiting_JoinsBehindThemInsteadOfBooking()
+    public async Task Join_WhenFreeSeatsFitBehindAnOversizedRequest_ReturnsSeatsAvailable()
     {
         // Arrange
         var headSeats = 3;
@@ -451,10 +451,10 @@ public class JoinWaitlistTests : ClubTest
         var response = await Host().User(178).JoinWaitlist(lesson, requestedSeats);
 
         // Assert
-        response.StatusCode.ShouldBe(HttpStatusCode.Created);
-        var body = await response.ReadBody<JoinWaitlistResponse>();
-        body.Position.ShouldBe(2);
-        body.Seats.ShouldBe(requestedSeats);
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await response.ReadReason()).ShouldBe(ConflictReason.SeatsAvailable);
         (await Host().WaitlistStatusOf(headId)).ShouldBe(DataAccessLayer.Entities.WaitlistStatus.Waiting);
+        var stored = await Host().Waiting(lesson.ClassId, lesson.UserId);
+        stored.WaitingCount.ShouldBe(0);
     }
 }

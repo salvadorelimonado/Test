@@ -412,7 +412,7 @@ public class ChangeSeatsTests : ClubTest
     }
 
     [TestMethod]
-    public async Task ChangeSeats_WhenIncreasingAndTheQueueIsNotEmpty_ReturnsWaitlistNotEmpty()
+    public async Task ChangeSeats_WhenTheIncreaseFitsBehindAnOversizedRequest_ChangesTheSeats()
     {
         // Arrange
         var bookedSeats = 1;
@@ -429,11 +429,11 @@ public class ChangeSeatsTests : ClubTest
         var response = await Host().User(35).ChangeSeats(created.Id, requestedSeats);
 
         // Assert
-        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
-        (await response.ReadReason()).ShouldBe(ConflictReason.WaitlistNotEmpty);
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
         var stored = await Host().Enrollment(created.Id, lesson.UserId);
-        stored.Seats.ShouldBe(bookedSeats);
-        stored.RemainingVisits.ShouldBe(visits - bookedSeats);
+        stored.Seats.ShouldBe(requestedSeats);
+        stored.RemainingVisits.ShouldBe(visits - requestedSeats);
+        (await Host().SumActiveSeats(lesson.ClassId)).ShouldBe(requestedSeats);
         (await Host().WaitlistStatusOf(headId)).ShouldBe(WaitlistStatus.Waiting);
     }
 

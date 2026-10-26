@@ -15,7 +15,7 @@ public static class ApiRateLimit
 
     private static readonly TimeSpan Window = TimeSpan.FromMinutes(1);
 
-    public static void Add(IServiceCollection services)
+    public static IServiceCollection AddApiRateLimit(this IServiceCollection services)
     {
         services.AddRateLimiter(options =>
         {
@@ -37,6 +37,7 @@ public static class ApiRateLimit
                 }
 
                 var redis = httpContext.RequestServices.GetRequiredService<IConnectionMultiplexer>();
+                // решение: при недоступном Redis лимитер отвечает ошибкой, а не пропускает запрос без ограничения.
 
                 return RedisRateLimitPartition.GetSlidingWindowRateLimiter(
                     userId,
@@ -48,5 +49,7 @@ public static class ApiRateLimit
                     });
             });
         });
+
+        return services;
     }
 }

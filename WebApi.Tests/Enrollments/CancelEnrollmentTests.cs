@@ -266,7 +266,7 @@ public class CancelEnrollmentTests : ClubTest
     }
 
     [TestMethod]
-    public async Task Cancel_WhenHeadNeedsMoreSeatsThanAreFree_PromotesNobody()
+    public async Task Cancel_WhenHeadNeedsMoreSeatsThanAreFree_PromotesTheNextWhoFits()
     {
         // Arrange
         var seats = 1;
@@ -291,13 +291,13 @@ public class CancelEnrollmentTests : ClubTest
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         (await Host().WaitlistStatusOf(headId)).ShouldBe(WaitlistStatus.Waiting);
-        (await Host().WaitlistStatusOf(behindId)).ShouldBe(WaitlistStatus.Waiting);
+        (await Host().WaitlistStatusOf(behindId)).ShouldBe(WaitlistStatus.Promoted);
         var headUserId = await Host().UserId(58);
         var behindUserId = await Host().UserId(59);
         (await Host().ActiveCount(headUserId, lesson.ClassId)).ShouldBe(0);
-        (await Host().ActiveCount(behindUserId, lesson.ClassId)).ShouldBe(0);
+        (await Host().ActiveSeats(behindUserId, lesson.ClassId)).ShouldBe(behindSeats);
         (await Host().RemainingVisits(headUserId)).ShouldBe(waiterVisits);
-        (await Host().RemainingVisits(behindUserId)).ShouldBe(waiterVisits);
+        (await Host().RemainingVisits(behindUserId)).ShouldBe(waiterVisits - behindSeats);
     }
 
     [TestMethod]

@@ -156,6 +156,38 @@ public class GetEnrollmentTests : ClubTest
     }
 
     [TestMethod]
+    public async Task Get_WhenAnIncreasePromotesAnotherClient_RefreshesThatClientsCachedCard()
+    {
+        // Arrange
+        var bookedSeats = 1;
+        var increasedSeats = 2;
+        var waiterSeats = 1;
+        var otherSeats = 1;
+        var visits = 6;
+        var validUntil = ClubTime.Today().AddDays(30);
+        var startsAt = ClubTime.WholeSecond(DateTime.UtcNow.AddHours(5));
+        var waiter = await Host().RegisterMember(visits, validUntil);
+        var owner = await Host().RegisterMember(visits, validUntil);
+        var otherClass = await Host().Lesson().Capacity(4).StartsAt(startsAt).Pass(waiter.Number, visits, validUntil).Create();
+        var otherBooking = await waiter.Book(otherClass, otherSeats);
+        var cached = await waiter.GetEnrollment(otherBooking.Id);
+        cached.EnsureSuccessStatusCode();
+        var target = await Host().Lesson().Capacity(4).StartsAt(startsAt.AddHours(1)).Pass(owner.Number, visits, validUntil).Create();
+        var ownerBooking = await owner.Book(target, bookedSeats);
+        await Host().AddWaiting(waiter.Number, target.ClassId, waiterSeats, DateTime.UtcNow.AddMinutes(-5));
+
+        // Act
+        var increased = await owner.ChangeSeats(ownerBooking.Id, increasedSeats);
+        var response = await waiter.GetEnrollment(otherBooking.Id);
+
+        // Assert
+        increased.StatusCode.ShouldBe(HttpStatusCode.OK);
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var card = await response.ReadBody<EnrollmentCard>();
+        card.Pass.RemainingVisits.ShouldBe(visits - otherSeats - waiterSeats);
+    }
+
+    [TestMethod]
     public async Task Get_WhenTheIdIsNotNumeric_ReturnsBadRequest()
     {
         // Arrange

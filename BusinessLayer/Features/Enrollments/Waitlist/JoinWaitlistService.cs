@@ -35,7 +35,7 @@ public sealed class JoinWaitlistService
         {
             attempt = await _unitOfWork.ExecuteInTransactionAsync(
                 token => JoinInTransactionAsync(command, token),
-                joined => joined.Result is OperationResult<JoinedWaitlist>.Ok || joined.QueueChanged,
+                joined => joined.Result is OperationResult<JoinedWaitlist>.Ok,
                 ct);
         }
         catch (DbUpdateException exception) when (UniqueConstraintViolation.IsRaisedBy(
@@ -48,9 +48,12 @@ public sealed class JoinWaitlistService
             return await ReplayAsync(command, ct);
         }
 
-        foreach (var userId in attempt.PromotedUserIds.Distinct())
+        if (attempt.Result is OperationResult<JoinedWaitlist>.Ok)
         {
-            await _cardCache.InvalidateAsync(userId);
+            foreach (var userId in attempt.PromotedUserIds.Distinct())
+            {
+                await _cardCache.InvalidateAsync(userId);
+            }
         }
 
         return attempt.Result;
@@ -68,10 +71,11 @@ public sealed class JoinWaitlistService
         var stored = await FindAsync(command, ct);
         if (stored is not null)
         {
-            return new JoinAttempt(stored, [], false);
+            return new JoinAttempt(stored, []);
         }
 
         var joined = await JoinCoreAsync(command, ct);
+        // решение: 404 и 409 под тем же ключом не запоминаем, чтобы запрос можно было повторить.
         if (joined.Result is OperationResult<JoinedWaitlist>.Ok ok)
         {
             await _idempotency.SaveAsync(
@@ -141,6 +145,8 @@ public sealed class JoinWaitlistService
 
         if (command.Seats > scheduledClass.Capacity)
         {
+            // решение: своя причина exceeds-capacity, когда запрошено больше вместимости.
+            // Мест при этом ещё может не быть — это отдельный отказ от capacity-exceeded.
             return JoinAttempt.Stop(new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.ExceedsCapacity));
         }
 
@@ -149,10 +155,10 @@ public sealed class JoinWaitlistService
         var freeSeats = scheduledClass.Capacity - takenSeats;
         if (freeSeats >= command.Seats)
         {
+            // решение: в очередь встают только когда свободных мест меньше, чем запрошено.
             return new JoinAttempt(
                 new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.SeatsAvailable),
-                promotion.PromotedUserIds,
-                promotion.Changed);
+                promotion.PromotedUserIds);
         }
 
         var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(command.UserId, ct);
@@ -166,16 +172,14 @@ public sealed class JoinWaitlistService
         {
             return new JoinAttempt(
                 new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.PassExpired),
-                promotion.PromotedUserIds,
-                promotion.Changed);
+                promotion.PromotedUserIds);
         }
 
         if (pass.RemainingVisits < command.Seats)
         {
             return new JoinAttempt(
                 new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.PassExhausted),
-                promotion.PromotedUserIds,
-                promotion.Changed);
+                promotion.PromotedUserIds);
         }
 
         var entry = new WaitlistEntry
@@ -204,8 +208,7 @@ public sealed class JoinWaitlistService
                 Position = position,
                 CreatedAt = entry.CreatedAt
             }),
-            promotion.PromotedUserIds,
-            promotion.Changed);
+            promotion.PromotedUserIds);
     }
 
     private async Task<WaitlistFillResult> PromoteWaitingAsync(
@@ -221,11 +224,6 @@ public sealed class JoinWaitlistService
 
         var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(scheduledClass.Id, ct);
         var freeSeats = scheduledClass.Capacity - takenSeats;
-        if (freeSeats <= 0)
-        {
-            return WaitlistFillResult.None;
-        }
-
         var waiting = await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct);
         if (waiting.Count == 0)
         {
@@ -233,7 +231,7 @@ public sealed class JoinWaitlistService
         }
 
         var passes = await _unitOfWork.Pass.GetByUsersForUpdateAsync(
-            WaitlistFillResult.PassIdsToLock(waiting, freeSeats, joinerUserId),
+            WaitlistFillResult.PassIdsToLock(waiting, joinerUserId),
             ct);
         var result = WaitlistFillResult.Fill(scheduledClass, waiting, passes, freeSeats, now);
         if (result.Changed)
@@ -246,12 +244,11 @@ public sealed class JoinWaitlistService
 
     private sealed record JoinAttempt(
         OperationResult<JoinedWaitlist> Result,
-        IReadOnlyList<long> PromotedUserIds,
-        bool QueueChanged)
+        IReadOnlyList<long> PromotedUserIds)
     {
         public static JoinAttempt Stop(OperationResult<JoinedWaitlist> result)
         {
-            return new JoinAttempt(result, [], false);
+            return new JoinAttempt(result, []);
         }
     }
 }

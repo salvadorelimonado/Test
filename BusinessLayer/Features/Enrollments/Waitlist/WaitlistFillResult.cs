@@ -16,22 +16,6 @@ public sealed class WaitlistFillResult
 
     public bool Changed { get; }
 
-    public static IReadOnlyList<long> UserIdsWithinFreeSeats(IReadOnlyList<WaitlistEntry> waiting, int freeSeats)
-    {
-        var userIds = new List<long>();
-        foreach (var entry in waiting)
-        {
-            if (entry.Seats > freeSeats)
-            {
-                continue;
-            }
-
-            userIds.Add(entry.UserId);
-        }
-
-        return userIds;
-    }
-
     public static IReadOnlyList<long> InLockOrder(IReadOnlyList<long> queueUserIds, long ownerUserId)
     {
         var userIds = new List<long>(queueUserIds.Count + 1);
@@ -57,10 +41,9 @@ public sealed class WaitlistFillResult
 
     public static IReadOnlyList<long> PassIdsToLock(
         IReadOnlyList<WaitlistEntry> waiting,
-        int freeSeats,
         long? includeUserId)
     {
-        var queueUserIds = freeSeats > 0 ? UserIdsWithinFreeSeats(waiting, freeSeats) : [];
+        var queueUserIds = waiting.Select(entry => entry.UserId).ToList();
         if (includeUserId is long userId)
         {
             return InLockOrder(queueUserIds, userId);
@@ -86,7 +69,7 @@ public sealed class WaitlistFillResult
         int freeSeats,
         DateTime now)
     {
-        if (freeSeats <= 0 || waiting.Count == 0)
+        if (waiting.Count == 0)
         {
             return None;
         }
@@ -107,13 +90,6 @@ public sealed class WaitlistFillResult
         var changed = false;
         foreach (var entry in waiting)
         {
-            if (entry.Seats > remainingSeats)
-            {
-                // решение: берём первую заявку, которой хватает мест, а не строго голову очереди.
-                // Большая заявка может ждать долго, зато каждой оставшейся нужно больше мест, чем свободно.
-                continue;
-            }
-
             if (!passes.TryGetValue(entry.UserId, out var pass))
             {
                 throw new InvalidOperationException("Pass was not found.");
@@ -121,8 +97,17 @@ public sealed class WaitlistFillResult
 
             if (pass.ValidUntil < today || pass.RemainingVisits < entry.Seats)
             {
+                // решение: недействующий абонемент снимаем с очереди сразу, даже если мест пока не хватает.
+                // Иначе заявка сдвигает position у всех за ней. Если абонемент продлят вне API, место в очереди уже потеряно.
                 entry.Status = WaitlistStatus.Skipped;
                 changed = true;
+                continue;
+            }
+
+            if (entry.Seats > remainingSeats)
+            {
+                // решение: берём первую заявку, которой хватает мест, а не строго голову очереди.
+                // Большая заявка может ждать долго, зато каждой оставшейся нужно больше мест, чем свободно.
                 continue;
             }
 

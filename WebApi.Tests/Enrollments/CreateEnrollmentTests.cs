@@ -260,7 +260,7 @@ public class CreateEnrollmentTests : ClubTest
     }
 
     [TestMethod]
-    public async Task Create_WhenTheQueueIsNotEmpty_ReturnsWaitlistNotEmpty()
+    public async Task Create_WhenFreeSeatsFitBehindAnOversizedRequest_Books()
     {
         // Arrange
         var visits = 6;
@@ -278,11 +278,14 @@ public class CreateEnrollmentTests : ClubTest
         var response = await Host().User(14).Enroll(lesson, requestedSeats);
 
         // Assert
-        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
-        (await response.ReadReason()).ShouldBe(ConflictReason.WaitlistNotEmpty);
+        response.StatusCode.ShouldBe(HttpStatusCode.Created);
+        var body = await response.ReadBody<CreateEnrollmentResponse>();
+        body.Seats.ShouldBe(requestedSeats);
+        body.Status.ShouldBe(EnrollmentStatus.Active);
         var stored = await Host().ActiveBooking(lesson.ClassId, lesson.UserId);
-        stored.Count.ShouldBe(0);
-        stored.RemainingVisits.ShouldBe(visits);
+        stored.Count.ShouldBe(1);
+        stored.RemainingVisits.ShouldBe(visits - requestedSeats);
+        (await Host().SumActiveSeats(lesson.ClassId)).ShouldBe(heldSeats + requestedSeats);
         (await Host().WaitlistStatusOf(headId)).ShouldBe(WaitlistStatus.Waiting);
     }
 
@@ -354,7 +357,7 @@ public class CreateEnrollmentTests : ClubTest
     }
 
     [TestMethod]
-    public async Task Create_WhenTheWaitingHeadFits_PromotesThemAndRejectsTheNewcomer()
+    public async Task Create_WhenTheWaitingHeadFits_RejectsTheNewcomerWithoutPromoting()
     {
         // Arrange
         var requestedSeats = 1;
@@ -371,12 +374,77 @@ public class CreateEnrollmentTests : ClubTest
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
         (await response.ReadReason()).ShouldBe(ConflictReason.CapacityExceeded);
-        (await Host().WaitlistStatusOf(headId)).ShouldBe(WaitlistStatus.Promoted);
+        (await Host().WaitlistStatusOf(headId)).ShouldBe(WaitlistStatus.Waiting);
         var waiterUserId = await Host().UserId(waiter.Number);
-        (await Host().ActiveSeats(waiterUserId, lesson.ClassId)).ShouldBe(requestedSeats);
-        (await Host().RemainingVisits(waiterUserId)).ShouldBe(visits - requestedSeats);
+        (await Host().ActiveCount(waiterUserId, lesson.ClassId)).ShouldBe(0);
+        (await Host().RemainingVisits(waiterUserId)).ShouldBe(visits);
         (await Host().ActiveCount(lesson.UserId, lesson.ClassId)).ShouldBe(0);
         (await Host().RemainingVisits(lesson.UserId)).ShouldBe(visits);
+    }
+
+    [TestMethod]
+    public async Task Create_WhenTheCallersOwnRequestWouldBePromoted_LeavesTheQueueUntouched()
+    {
+        // Arrange
+        var requestedSeats = 1;
+        var waitingSeats = 2;
+        var visits = 2;
+        var validUntil = ClubTime.Today().AddDays(30);
+        var member = await Host().RegisterMember(visits, validUntil);
+        var lesson = await Host().Lesson()
+            .Capacity(3)
+            .StartsAt(DateTime.UtcNow.AddDays(4))
+            .Pass(member.Number, visits, validUntil)
+            .Create();
+        var entryId = await Host().AddWaiting(member.Number, lesson.ClassId, waitingSeats, DateTime.UtcNow.AddMinutes(-5));
+
+        // Act
+        var response = await member.Enroll(lesson, requestedSeats);
+
+        // Assert
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await response.ReadReason()).ShouldBe(ConflictReason.PassExhausted);
+        (await Host().WaitlistStatusOf(entryId)).ShouldBe(WaitlistStatus.Waiting);
+        (await Host().ActiveCount(lesson.UserId, lesson.ClassId)).ShouldBe(0);
+        (await Host().RemainingVisits(lesson.UserId)).ShouldBe(visits);
+    }
+
+    [TestMethod]
+    public async Task Create_WhenTheOversizedHeadCannotPay_SkipsThatRequestAndBooksTheNext()
+    {
+        // Arrange
+        var heldSeats = 2;
+        var headSeats = 3;
+        var nextSeats = 1;
+        var requestedSeats = 1;
+        var bookerVisits = 2;
+        var nextVisits = 2;
+        var headVisits = 4;
+        var validUntil = ClubTime.Today().AddDays(30);
+        var expired = ClubTime.Today().AddDays(-1);
+        var holder = await Host().RegisterMember(heldSeats, validUntil);
+        var head = await Host().RegisterMember(headVisits, expired);
+        var next = await Host().RegisterMember(nextVisits, validUntil);
+        var booker = await Host().RegisterMember(bookerVisits, validUntil);
+        var lesson = await Host().Lesson()
+            .Capacity(4)
+            .StartsAt(DateTime.UtcNow.AddDays(4))
+            .Pass(booker.Number, bookerVisits, validUntil)
+            .Create();
+        await Host().User(holder.Number).Book(lesson, heldSeats);
+        var headId = await Host().AddWaiting(head.Number, lesson.ClassId, headSeats, DateTime.UtcNow.AddMinutes(-10));
+        var nextId = await Host().AddWaiting(next.Number, lesson.ClassId, nextSeats, DateTime.UtcNow.AddMinutes(-5));
+
+        // Act
+        var response = await booker.Enroll(lesson, requestedSeats);
+
+        // Assert
+        response.StatusCode.ShouldBe(HttpStatusCode.Created);
+        (await Host().WaitlistStatusOf(headId)).ShouldBe(WaitlistStatus.Skipped);
+        (await Host().WaitlistStatusOf(nextId)).ShouldBe(WaitlistStatus.Promoted);
+        (await Host().ActiveSeats(await Host().UserId(next.Number), lesson.ClassId)).ShouldBe(nextSeats);
+        (await Host().ActiveSeats(lesson.UserId, lesson.ClassId)).ShouldBe(requestedSeats);
+        (await Host().RemainingVisits(lesson.UserId)).ShouldBe(bookerVisits - requestedSeats);
     }
 
     [TestMethod]

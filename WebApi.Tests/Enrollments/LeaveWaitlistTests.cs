@@ -81,6 +81,39 @@ public class LeaveWaitlistTests : ClubTest
     }
 
     [TestMethod]
+    public async Task Leave_WhenTheEntryWasSkipped_ReturnsCancelledAndKeepsTheRow()
+    {
+        // Arrange
+        var seats = 1;
+        var visits = 2;
+        var validUntil = ClubTime.Today().AddDays(30);
+        var member = await Host().RegisterMember(visits, validUntil);
+        var lesson = await Host().Lesson()
+            .Capacity(1)
+            .StartsAt(DateTime.UtcNow.AddDays(44))
+            .Pass(member.Number, visits, validUntil)
+            .Create();
+        var entryId = await Host().AddWaiting(member.Number, lesson.ClassId, seats, DateTime.UtcNow.AddMinutes(-5));
+        await Host().SetWaitlistStatus(entryId, WaitlistStatus.Skipped);
+        var user = Host().User(member.Number);
+
+        // Act
+        var response = await user.LeaveWaitlist(entryId);
+        var repeated = await user.LeaveWaitlist(entryId);
+
+        // Assert
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        repeated.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var body = await response.ReadBody<LeaveWaitlistResponse>();
+        var repeatedBody = await repeated.ReadBody<LeaveWaitlistResponse>();
+        body.Id.ShouldBe(entryId);
+        body.Status.ShouldBe(WaitlistStatus.Cancelled);
+        repeatedBody.Id.ShouldBe(entryId);
+        repeatedBody.Status.ShouldBe(WaitlistStatus.Cancelled);
+        (await Host().WaitlistStatusOf(entryId)).ShouldBe(WaitlistStatus.Skipped);
+    }
+
+    [TestMethod]
     public async Task Leave_WhenTheEntryIsMissing_ReturnsNotFound()
     {
         // Arrange

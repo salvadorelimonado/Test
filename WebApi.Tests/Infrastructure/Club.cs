@@ -1,13 +1,10 @@
 using System.Net.Http.Json;
-using BusinessLayer.Features.Enrollments.Cancel;
-using BusinessLayer.Result;
 using DataAccessLayer;
 using DataAccessLayer.Entities;
 using DataAccessLayer.Seeding;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using StackExchange.Redis;
 using WebApi.Auth;
 
 namespace WebApi.Tests.Infrastructure;
@@ -456,39 +453,6 @@ public sealed class Club : IDisposable
     {
         await using var scope = _factory.Services.CreateAsyncScope();
         await work(scope.ServiceProvider);
-    }
-
-    public async Task<OperationResult<CancelledEnrollment>> CancelThroughTheService(long userId, long enrollmentId)
-    {
-        await using var scope = _factory.Services.CreateAsyncScope();
-        var service = scope.ServiceProvider.GetRequiredService<CancelEnrollmentService>();
-        return await service.CancelAsync(
-            new CancelEnrollmentCommand
-            {
-                UserId = userId,
-                EnrollmentId = enrollmentId
-            },
-            CancellationToken.None);
-    }
-
-    public async Task WaitUntilRedisResponds()
-    {
-        var multiplexer = _factory.Services.GetRequiredService<IConnectionMultiplexer>();
-        var deadline = DateTime.UtcNow.AddSeconds(20);
-        while (DateTime.UtcNow < deadline)
-        {
-            try
-            {
-                await multiplexer.GetDatabase().PingAsync();
-                return;
-            }
-            catch (RedisException)
-            {
-                await Task.Delay(TimeSpan.FromMilliseconds(200));
-            }
-        }
-
-        throw new InvalidOperationException("Redis did not respond.");
     }
 
     private async Task<User> FindUser(ClubDbContext dbContext, int userNumber)

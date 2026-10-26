@@ -72,6 +72,7 @@ public sealed class CancelEnrollmentService
 
         if (scheduledClass.IsCancelled)
         {
+            // решение: на отменённом клубом занятии очередь не двигаем и свою заявку не снимаем.
             var clubPass = await _unitOfWork.Pass.GetByUserForUpdateAsync(enrollment.UserId, ct);
             if (clubPass is null)
             {
@@ -90,7 +91,7 @@ public sealed class CancelEnrollmentService
         var waiting = await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct);
         var stillWaiting = WaitlistFillResult.CancelOwnRequest(waiting, enrollment.UserId);
         var passes = await _unitOfWork.Pass.GetByUsersForUpdateAsync(
-            WaitlistFillResult.PassIdsToLock(stillWaiting, freeSeats, enrollment.UserId),
+            WaitlistFillResult.PassIdsToLock(stillWaiting, enrollment.UserId),
             ct);
         var pass = WaitlistFillResult.Require(passes, enrollment.UserId);
         var refundedVisits = Refund(scheduledClass, enrollment, pass, now);
@@ -98,6 +99,7 @@ public sealed class CancelEnrollmentService
         enrollment.CancelledAt = now;
         enrollment.RefundedVisits = refundedVisits;
         await _unitOfWork.SaveChangesAsync(ct);
+        // решение: места освобождаем и очередь двигаем даже если до начала меньше двух часов и визиты не вернулись.
         var promotion = WaitlistFillResult.TryFill(scheduledClass, stillWaiting, passes, freeSeats, now);
         if (promotion.Changed)
         {
@@ -111,6 +113,7 @@ public sealed class CancelEnrollmentService
 
     private static int Refund(Class scheduledClass, Enrollment enrollment, Pass pass, DateTime now)
     {
+        // решение: полный возврат, если до начала не меньше двух часов или занятие отменил клуб.
         var refundsFully = scheduledClass.IsCancelled || scheduledClass.StartsAt - now >= FullRefundLeadTime;
         if (!refundsFully)
         {

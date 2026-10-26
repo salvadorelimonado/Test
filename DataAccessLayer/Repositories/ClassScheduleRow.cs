@@ -18,5 +18,7 @@ public sealed class ClassScheduleRow
 
     public int TakenSeats { get; set; }
 
+    public int FreeSeats { get; set; }
+
     public int MySeats { get; set; }
 }

@@ -34,7 +34,7 @@ public class ScheduleController : BaseApiController
             Limit = request.Limit ?? SchedulePaginationLimits.DefaultPageSize,
             Cursor = request.ContinuationToken
         };
-        var rows = await _getScheduleService.GetAsync(query, ct);
-        return Ok(ScheduleMapper.ToResponse(rows, query.Limit));
+        var page = await _getScheduleService.GetAsync(query, ct);
+        return Ok(ScheduleMapper.ToResponse(page));
     }
 }

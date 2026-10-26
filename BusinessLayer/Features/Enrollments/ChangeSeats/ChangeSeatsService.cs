@@ -25,9 +25,9 @@ public sealed class ChangeSeatsService
     {
         var attempt = await _unitOfWork.ExecuteInTransactionAsync(
             token => ChangeLockedAsync(command, token),
-            result => result.Result is OperationResult<EnrollmentCardRow>.Ok || result.QueueChanged,
+            result => result.Result is OperationResult<EnrollmentCardRow>.Ok,
             ct);
-        if (attempt.Result is OperationResult<EnrollmentCardRow>.Ok || attempt.QueueChanged)
+        if (attempt.Result is OperationResult<EnrollmentCardRow>.Ok)
         {
             foreach (var userId in attempt.AffectedUserIds.Distinct())
             {
@@ -83,17 +83,40 @@ public sealed class ChangeSeatsService
         }
         else if (delta > 0)
         {
+            // решение: сначала догоняем очередь, потом проверяем абонемент и места уже после неё.
+            // Отказ откатывает продвижение: неудавшееся увеличение не сдвигает места и посещения.
             var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(scheduledClass.Id, ct);
-            var freeNow = scheduledClass.Capacity - takenSeats;
-            var pass = await LockOwnerAndQueueAsync(scheduledClass, command.UserId, QueueFreeSeats(delta, freeNow), ct);
-            var rejection = await RejectIncreaseAsync(scheduledClass, pass, enrollment, delta, now, command.UserId, ct);
-            if (rejection.Result is OperationResult<EnrollmentCardRow> rejected)
+            var freeSeats = scheduledClass.Capacity - takenSeats;
+            var waiting = await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct);
+            var passes = await _unitOfWork.Pass.GetByUsersForUpdateAsync(
+                WaitlistFillResult.PassIdsToLock(waiting, command.UserId),
+                ct);
+            var pass = WaitlistFillResult.Require(passes, command.UserId);
+            var promotion = WaitlistFillResult.Fill(scheduledClass, waiting, passes, freeSeats, now);
+            if (promotion.Changed)
             {
-                return new ChangeAttempt(rejected, rejection.Promotion.PromotedUserIds, rejection.Promotion.Changed);
+                await _unitOfWork.SaveChangesAsync(ct);
             }
 
-            promotedUserIds.AddRange(rejection.Promotion.PromotedUserIds);
+            takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(scheduledClass.Id, ct);
+            freeSeats = scheduledClass.Capacity - takenSeats;
+            var today = DateOnly.FromDateTime(now);
+            if (pass.ValidUntil < today)
+            {
+                return Failed(new OperationResult<EnrollmentCardRow>.Conflict(ConflictReason.PassExpired));
+            }
 
+            if (pass.RemainingVisits < delta)
+            {
+                return Failed(new OperationResult<EnrollmentCardRow>.Conflict(ConflictReason.PassExhausted));
+            }
+
+            if (freeSeats < delta)
+            {
+                return Failed(new OperationResult<EnrollmentCardRow>.Conflict(ConflictReason.CapacityExceeded));
+            }
+
+            promotedUserIds.AddRange(promotion.PromotedUserIds);
             enrollment.Seats = command.Seats;
             pass.RemainingVisits -= delta;
             await _unitOfWork.SaveChangesAsync(ct);
@@ -102,18 +125,17 @@ public sealed class ChangeSeatsService
         var card = await CardAsync(enrollment.Id, command.UserId, ct);
         var affectedUserIds = new List<long> { command.UserId };
         affectedUserIds.AddRange(promotedUserIds);
-        return new ChangeAttempt(new OperationResult<EnrollmentCardRow>.Ok(card), affectedUserIds, false);
+        return new ChangeAttempt(new OperationResult<EnrollmentCardRow>.Ok(card), affectedUserIds);
     }
 
     private static ChangeAttempt Failed(OperationResult<EnrollmentCardRow> result)
     {
-        return new ChangeAttempt(result, [], false);
+        return new ChangeAttempt(result, []);
     }
 
     private sealed record ChangeAttempt(
         OperationResult<EnrollmentCardRow> Result,
-        IReadOnlyList<long> AffectedUserIds,
-        bool QueueChanged);
+        IReadOnlyList<long> AffectedUserIds);
 
     private async Task<IReadOnlyList<long>> ReleaseSeatsAsync(
         Class scheduledClass,
@@ -125,11 +147,12 @@ public sealed class ChangeSeatsService
     {
         var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(scheduledClass.Id, ct);
         var freeNow = scheduledClass.Capacity - takenSeats;
-        var freeSeats = QueueFreeSeats(delta, freeNow);
+        // решение: уменьшение возвращает посещения в любой момент до начала, в том числе менее чем за два часа.
+        var freeSeats = freeNow - delta;
         var waiting = await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct);
         var stillWaiting = WaitlistFillResult.CancelOwnRequest(waiting, enrollment.UserId);
         var passes = await _unitOfWork.Pass.GetByUsersForUpdateAsync(
-            WaitlistFillResult.PassIdsToLock(stillWaiting, freeSeats, enrollment.UserId),
+            WaitlistFillResult.PassIdsToLock(stillWaiting, enrollment.UserId),
             ct);
         var pass = WaitlistFillResult.Require(passes, enrollment.UserId);
         enrollment.Seats = seats;
@@ -143,128 +166,6 @@ public sealed class ChangeSeatsService
 
         return promotion.PromotedUserIds;
     }
-
-    private async Task<IncreaseRejection> RejectIncreaseAsync(
-        Class scheduledClass,
-        Pass pass,
-        Enrollment enrollment,
-        int delta,
-        DateTime now,
-        long ownerUserId,
-        CancellationToken ct)
-    {
-        var today = DateOnly.FromDateTime(now);
-        if (pass.ValidUntil < today)
-        {
-            return new IncreaseRejection(
-                new OperationResult<EnrollmentCardRow>.Conflict(ConflictReason.PassExpired),
-                WaitlistFillResult.None);
-        }
-
-        if (pass.RemainingVisits < delta)
-        {
-            return new IncreaseRejection(
-                new OperationResult<EnrollmentCardRow>.Conflict(ConflictReason.PassExhausted),
-                WaitlistFillResult.None);
-        }
-
-        var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(enrollment.ClassId, ct);
-        var freeSeats = scheduledClass.Capacity - takenSeats;
-        if (freeSeats < delta)
-        {
-            return new IncreaseRejection(
-                new OperationResult<EnrollmentCardRow>.Conflict(ConflictReason.CapacityExceeded),
-                WaitlistFillResult.None);
-        }
-
-        var promotion = await PromoteWaitingAsync(scheduledClass, now, ownerUserId, ct);
-        takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(enrollment.ClassId, ct);
-        freeSeats = scheduledClass.Capacity - takenSeats;
-        if (freeSeats < delta)
-        {
-            return new IncreaseRejection(
-                new OperationResult<EnrollmentCardRow>.Conflict(ConflictReason.CapacityExceeded),
-                promotion);
-        }
-
-        return new IncreaseRejection(null, promotion);
-    }
-
-    private static int QueueFreeSeats(int delta, int freeNow)
-    {
-        if (delta > 0)
-        {
-            return freeNow >= delta ? freeNow : 0;
-        }
-
-        var predicted = (long)freeNow - delta;
-        if (predicted <= 0)
-        {
-            return 0;
-        }
-
-        if (predicted > int.MaxValue)
-        {
-            return int.MaxValue;
-        }
-
-        return (int)predicted;
-    }
-
-    private async Task<WaitlistFillResult> PromoteWaitingAsync(
-        Class scheduledClass,
-        DateTime now,
-        long ownerUserId,
-        CancellationToken ct)
-    {
-        if (scheduledClass.IsCancelled)
-        {
-            return WaitlistFillResult.None;
-        }
-
-        var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(scheduledClass.Id, ct);
-        var freeSeats = scheduledClass.Capacity - takenSeats;
-        if (freeSeats <= 0)
-        {
-            return WaitlistFillResult.None;
-        }
-
-        var waiting = await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct);
-        if (waiting.Count == 0)
-        {
-            return WaitlistFillResult.None;
-        }
-
-        var passes = await _unitOfWork.Pass.GetByUsersForUpdateAsync(
-            WaitlistFillResult.PassIdsToLock(waiting, freeSeats, ownerUserId),
-            ct);
-        var result = WaitlistFillResult.Fill(scheduledClass, waiting, passes, freeSeats, now);
-        if (result.Changed)
-        {
-            await _unitOfWork.SaveChangesAsync(ct);
-        }
-
-        return result;
-    }
-
-    private async Task<Pass> LockOwnerAndQueueAsync(
-        Class scheduledClass,
-        long ownerUserId,
-        int freeSeats,
-        CancellationToken ct)
-    {
-        var waiting = freeSeats > 0
-            ? await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct)
-            : [];
-        var passes = await _unitOfWork.Pass.GetByUsersForUpdateAsync(
-            WaitlistFillResult.PassIdsToLock(waiting, freeSeats, ownerUserId),
-            ct);
-        return WaitlistFillResult.Require(passes, ownerUserId);
-    }
-
-    private sealed record IncreaseRejection(
-        OperationResult<EnrollmentCardRow>? Result,
-        WaitlistFillResult Promotion);
 
     private async Task<EnrollmentCardRow> CardAsync(long enrollmentId, long userId, CancellationToken ct)
     {

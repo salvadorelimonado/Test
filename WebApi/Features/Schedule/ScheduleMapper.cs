@@ -1,23 +1,21 @@
-using DataAccessLayer.Repositories;
+using BusinessLayer.Features.Schedule;
 
 namespace WebApi.Features.Schedule;
 
 public static class ScheduleMapper
 {
-    public static SchedulePage ToResponse(IReadOnlyList<ClassScheduleRow> rows, int limit)
+    public static SchedulePage ToResponse(SchedulePageResult page)
     {
-        var hasMore = rows.Count > limit;
-        var visible = hasMore ? rows.Take(limit).ToList() : rows;
         string? continuationToken = null;
-        if (hasMore)
+        if (page.HasContinuation)
         {
-            var last = visible[visible.Count - 1];
+            var last = page.Items[page.Items.Count - 1];
             continuationToken = ScheduleContinuation.Write(last.StartsAt, last.ClassId);
         }
 
         return new SchedulePage
         {
-            Items = visible.Select(row => new ScheduleItem
+            Items = page.Items.Select(row => new ScheduleItem
             {
                 ClassId = row.ClassId,
                 Title = row.Title,
@@ -29,7 +27,7 @@ public static class ScheduleMapper
                     Name = row.RoomName
                 },
                 Capacity = row.Capacity,
-                FreeSeats = Math.Max(0, row.Capacity - row.TakenSeats),
+                FreeSeats = row.FreeSeats,
                 MySeats = row.MySeats
             }).ToList(),
             ContinuationToken = continuationToken

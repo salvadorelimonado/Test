@@ -62,6 +62,7 @@ public sealed class IdempotencyService
 
         if (!existing.RequestHash.AsSpan().SequenceEqual(requestHash))
         {
+            // решение: тот же ключ с другим телом — idempotency-mismatch, а не повтор первого ответа.
             return new OperationResult<TResponse>.Conflict(ConflictReason.IdempotencyMismatch);
         }
 
