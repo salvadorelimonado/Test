@@ -8,6 +8,8 @@ namespace BusinessLayer.Features.Enrollments.Waitlist;
 
 public sealed class LeaveWaitlistService
 {
+    private const string PromotedEnrollmentId = "promotedEnrollmentId";
+
     private readonly IUnitOfWork _unitOfWork;
     private readonly TimeProvider _clock;
     private readonly EnrollmentCardCache _cardCache;
@@ -19,24 +21,24 @@ public sealed class LeaveWaitlistService
         _cardCache = cardCache;
     }
 
-    public async Task<LeaveWaitlistModel> LeaveAsync(LeaveWaitlistCommand command, CancellationToken ct)
+    public async Task<OperationResult<LeftWaitlist>> LeaveAsync(LeaveWaitlistCommand command, CancellationToken ct)
     {
-        var model = await _unitOfWork.ExecuteInTransactionAsync(
+        var attempt = await _unitOfWork.ExecuteInTransactionAsync(
             token => LeaveLockedAsync(command, token),
-            model => model.Result is OperationResult<LeftWaitlist>.Ok,
+            attempt => attempt.Result is OperationResult<LeftWaitlist>.Ok,
             ct);
-        if (model.Result is OperationResult<LeftWaitlist>.Ok)
+        if (attempt.Result is OperationResult<LeftWaitlist>.Ok)
         {
-            foreach (var userId in model.PromotedUserIds)
+            foreach (var userId in attempt.PromotedUserIds)
             {
                 await _cardCache.InvalidateAsync(userId);
             }
         }
 
-        return model;
+        return attempt.Result;
     }
 
-    private async Task<LeaveWaitlistModel> LeaveLockedAsync(LeaveWaitlistCommand command, CancellationToken ct)
+    private async Task<LeaveAttempt> LeaveLockedAsync(LeaveWaitlistCommand command, CancellationToken ct)
     {
         var owner = await _unitOfWork.Waitlist.FindOwnerAsync(command.EntryId, ct);
         if (owner is null || owner.UserId != command.UserId)
@@ -59,27 +61,33 @@ public sealed class LeaveWaitlistService
         switch (entry.Status)
         {
             case WaitlistStatus.Promoted:
-                return new LeaveWaitlistModel
-                {
-                    Result = new OperationResult<LeftWaitlist>.Conflict(
-                        ConflictReason.AlreadyPromoted),
-                    PromotedEnrollmentId = entry.PromotedEnrollmentId
-                };
+                return Stop(AlreadyPromoted(entry.PromotedEnrollmentId));
             case WaitlistStatus.Cancelled:
             case WaitlistStatus.Skipped:
-                return Done(ToResponse(entry));
+                return Done(ToResponse(entry), []);
             case WaitlistStatus.Waiting:
                 entry.Status = WaitlistStatus.Cancelled;
                 await _unitOfWork.SaveChangesAsync(ct);
                 var promotedUserIds = await PromoteIfTheClassIsOpenAsync(scheduledClass, ct);
-                return new LeaveWaitlistModel
-                {
-                    Result = new OperationResult<LeftWaitlist>.Ok(ToResponse(entry)),
-                    PromotedUserIds = promotedUserIds
-                };
+                return Done(ToResponse(entry), promotedUserIds);
             default:
                 throw new ArgumentOutOfRangeException(nameof(entry.Status), entry.Status, null);
         }
+    }
+
+    private static OperationResult<LeftWaitlist> AlreadyPromoted(long? promotedEnrollmentId)
+    {
+        if (promotedEnrollmentId is long enrollmentId)
+        {
+            return new OperationResult<LeftWaitlist>.Conflict(
+                ConflictReason.AlreadyPromoted,
+                new Dictionary<string, object>
+                {
+                    [PromotedEnrollmentId] = enrollmentId
+                });
+        }
+
+        return new OperationResult<LeftWaitlist>.Conflict(ConflictReason.AlreadyPromoted);
     }
 
     private async Task<IReadOnlyList<long>> PromoteIfTheClassIsOpenAsync(Class scheduledClass, CancellationToken ct)
@@ -126,20 +134,19 @@ public sealed class LeaveWaitlistService
         return result;
     }
 
-    private static LeaveWaitlistModel Done(LeftWaitlist response)
+    private static LeaveAttempt Done(LeftWaitlist response, IReadOnlyList<long> promotedUserIds)
     {
-        return new LeaveWaitlistModel
-        {
-            Result = new OperationResult<LeftWaitlist>.Ok(response)
-        };
+        return new LeaveAttempt(new OperationResult<LeftWaitlist>.Ok(response), promotedUserIds);
     }
 
-    private static LeaveWaitlistModel NotFound()
+    private static LeaveAttempt Stop(OperationResult<LeftWaitlist> result)
     {
-        return new LeaveWaitlistModel
-        {
-            Result = new OperationResult<LeftWaitlist>.NotFound()
-        };
+        return new LeaveAttempt(result, []);
+    }
+
+    private static LeaveAttempt NotFound()
+    {
+        return Stop(new OperationResult<LeftWaitlist>.NotFound());
     }
 
     private static LeftWaitlist ToResponse(WaitlistEntry entry)
@@ -150,4 +157,6 @@ public sealed class LeaveWaitlistService
             Status = entry.Status
         };
     }
+
+    private sealed record LeaveAttempt(OperationResult<LeftWaitlist> Result, IReadOnlyList<long> PromotedUserIds);
 }

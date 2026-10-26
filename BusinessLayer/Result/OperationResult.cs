@@ -21,12 +21,15 @@ public abstract record OperationResult<T>
 
     public sealed record Conflict : OperationResult<T>
     {
-        public Conflict(ConflictReason reason)
+        public Conflict(ConflictReason reason, IReadOnlyDictionary<string, object>? details = null)
         {
             Reason = reason;
+            Details = details;
         }
 
         public ConflictReason Reason { get; }
+
+        public IReadOnlyDictionary<string, object>? Details { get; }
     }
 
     public OperationResult<TResult> Select<TResult>(Func<T, TResult> map)
@@ -40,7 +43,7 @@ public abstract record OperationResult<T>
             case NotFound:
                 return new OperationResult<TResult>.NotFound();
             case Conflict conflict:
-                return new OperationResult<TResult>.Conflict(conflict.Reason);
+                return new OperationResult<TResult>.Conflict(conflict.Reason, conflict.Details);
             default:
                 throw new ArgumentOutOfRangeException(nameof(result), result, null);
         }

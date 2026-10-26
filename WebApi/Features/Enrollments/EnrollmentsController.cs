@@ -1,4 +1,3 @@
-using BusinessLayer.Result;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
@@ -108,8 +107,8 @@ public class EnrollmentsController : BaseApiController
             UserId = CurrentUserId,
             EntryId = id
         };
-        var model = await _leaveWaitlistService.LeaveAsync(command, ct);
-        return ToLeaveActionResult(model.Result.Select(EnrollmentMapper.ToResponse), model.PromotedEnrollmentId);
+        var result = await _leaveWaitlistService.LeaveAsync(command, ct);
+        return result.Select(EnrollmentMapper.ToResponse).ToActionResult(StatusCodes.Status200OK);
     }
 
     [HttpPost("{id}/seats")]
@@ -154,29 +153,5 @@ public class EnrollmentsController : BaseApiController
         };
         var result = await _getEnrollmentService.GetAsync(query, ct);
         return result.Select(EnrollmentMapper.ToResponse).ToActionResult(StatusCodes.Status200OK);
-    }
-
-    private static IActionResult ToLeaveActionResult(
-        OperationResult<LeaveWaitlistResponse> result,
-        long? promotedEnrollmentId)
-    {
-        var actionResult = result.ToActionResult(StatusCodes.Status200OK);
-        if (promotedEnrollmentId is not long enrollmentId)
-        {
-            return actionResult;
-        }
-
-        if (actionResult is not ObjectResult problem)
-        {
-            throw new ArgumentNullException(nameof(actionResult));
-        }
-
-        if (problem.Value is not ProblemDetails details)
-        {
-            throw new ArgumentNullException(nameof(problem.Value));
-        }
-
-        details.Extensions["promotedEnrollmentId"] = enrollmentId;
-        return actionResult;
     }
 }

@@ -18,7 +18,7 @@ public static class OperationResultMapper
             case OperationResult<T>.NotFound:
                 return ApiProblemsHelper.Create(StatusCodes.Status404NotFound);
             case OperationResult<T>.Conflict conflict:
-                return ApiProblemsHelper.Create(StatusCodes.Status409Conflict, conflict.Reason);
+                return ApiProblemsHelper.Create(StatusCodes.Status409Conflict, conflict.Reason, conflict.Details);
             default:
                 throw new ArgumentOutOfRangeException(nameof(result), result, null);
         }

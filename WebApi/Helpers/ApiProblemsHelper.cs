@@ -7,9 +7,12 @@ namespace WebApi.Helpers;
 
 public static class ApiProblemsHelper
 {
-    public static ObjectResult Create(int statusCode, ConflictReason? reason = null)
+    public static ObjectResult Create(
+        int statusCode,
+        ConflictReason? reason = null,
+        IReadOnlyDictionary<string, object>? details = null)
     {
-        var details = new ProblemDetails
+        var problem = new ProblemDetails
         {
             Status = statusCode,
             Title = ReasonPhrases.GetReasonPhrase(statusCode)
@@ -17,11 +20,19 @@ public static class ApiProblemsHelper
 
         if (reason is ConflictReason value)
         {
-            details.Extensions["reason"] = JsonSerializer.SerializeToElement(value).GetString()
+            problem.Extensions["reason"] = JsonSerializer.SerializeToElement(value).GetString()
                 ?? throw new ArgumentNullException(nameof(reason));
         }
 
-        return new ObjectResult(details)
+        if (details is not null)
+        {
+            foreach (var detail in details)
+            {
+                problem.Extensions[detail.Key] = detail.Value;
+            }
+        }
+
+        return new ObjectResult(problem)
         {
             StatusCode = statusCode,
             ContentTypes = { "application/problem+json" }
