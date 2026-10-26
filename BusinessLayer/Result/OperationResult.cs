@@ -28,4 +28,21 @@ public abstract record OperationResult<T>
 
         public string Reason { get; }
     }
+
+    public OperationResult<TResult> Select<TResult>(Func<T, TResult> map)
+        where TResult : class
+    {
+        var result = this;
+        switch (result)
+        {
+            case Ok ok:
+                return new OperationResult<TResult>.Ok(map(ok.Value));
+            case NotFound:
+                return new OperationResult<TResult>.NotFound();
+            case Conflict conflict:
+                return new OperationResult<TResult>.Conflict(conflict.Reason);
+            default:
+                throw new ArgumentOutOfRangeException(nameof(result), result, null);
+        }
+    }
 }
