@@ -11,6 +11,7 @@ using FluentValidation;
 using Microsoft.IdentityModel.Tokens;
 using SharpGrip.FluentValidation.AutoValidation.Mvc.Extensions;
 using StackExchange.Redis;
+using BusinessLayer.Features.Enrollments.ChangeSeats;
 using BusinessLayer.Features.Enrollments.Create;
 using BusinessLayer.Idempotency;
 using WebApi.Auth;
@@ -43,6 +44,7 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<IdempotencyExecution>();
 builder.Services.AddScoped<CreateEnrollmentService>();
+builder.Services.AddScoped<ChangeSeatsService>();
 builder.Services.AddScoped<IdempotencyKeyReader>();
 
 EnrollmentRateLimit.Add(builder.Services);
