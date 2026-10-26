@@ -38,4 +38,25 @@ public class RedisCacheService : ICacheService
     {
         await _connection.GetDatabase().KeyDeleteAsync(key);
     }
+
+    public async Task<long?> ReadLongAsync(string key, CancellationToken ct = default)
+    {
+        var value = await _connection.GetDatabase().StringGetAsync(key);
+        if (value.IsNullOrEmpty)
+        {
+            return null;
+        }
+
+        if (!long.TryParse(value.ToString(), out var number))
+        {
+            throw new InvalidOperationException("Cache counter is not a number.");
+        }
+
+        return number;
+    }
+
+    public async Task<long> IncrementAsync(string key, CancellationToken ct = default)
+    {
+        return await _connection.GetDatabase().StringIncrementAsync(key);
+    }
 }
