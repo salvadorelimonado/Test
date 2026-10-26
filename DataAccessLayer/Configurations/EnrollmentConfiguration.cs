@@ -12,11 +12,7 @@ public class EnrollmentConfiguration : IEntityTypeConfiguration<Enrollment>
 
         builder.Property(x => x.RefundedVisits).HasDefaultValue(0);
 
-        builder.Property(x => x.Status)
-            .HasConversion(
-                status => EnrollmentStatusMapping.ToDatabase(status),
-                value => EnrollmentStatusMapping.FromDatabase(value))
-            .IsRequired();
+        builder.Property(x => x.Status).HasConversion<string>().IsRequired();
 
         builder
             .HasOne<User>()
