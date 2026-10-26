@@ -1,4 +1,3 @@
-using System.Text.Json;
 using BusinessLayer.Result;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
@@ -20,8 +19,7 @@ public static class ApiProblemsHelper
 
         if (reason is ConflictReason value)
         {
-            problem.Extensions["reason"] = JsonSerializer.SerializeToElement(value).GetString()
-                ?? throw new ArgumentNullException(nameof(reason));
+            problem.Extensions["reason"] = value;
         }
 
         if (details is not null)
