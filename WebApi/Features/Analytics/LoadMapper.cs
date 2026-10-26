@@ -1,24 +1,24 @@
-using BusinessLayer.Features.Analytics;
+using DataAccessLayer.Repositories;
 
 namespace WebApi.Features.Analytics;
 
 public static class LoadMapper
 {
-    public static LoadResponse ToResponse(LoadListing listing)
+    public static LoadResponse ToResponse(IReadOnlyList<ClassLoadRow> rows)
     {
         return new LoadResponse
         {
-            Items = listing.Items.Select(item => new LoadResponseItem
+            Items = rows.Select(row => new LoadResponseItem
             {
-                Date = item.Date,
+                Date = DateOnly.FromDateTime(row.Day),
                 Room = new LoadResponseRoom
                 {
-                    Id = item.Room.Id,
-                    Name = item.Room.Name
+                    Id = row.RoomId,
+                    Name = row.RoomName
                 },
-                ClassesCount = item.ClassesCount,
-                TotalCapacity = item.TotalCapacity,
-                BookedSeats = item.BookedSeats
+                ClassesCount = row.ClassesCount,
+                TotalCapacity = row.TotalCapacity,
+                BookedSeats = row.BookedSeats
             }).ToList()
         };
     }

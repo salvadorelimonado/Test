@@ -1,4 +1,5 @@
 using System.Globalization;
+using DataAccessLayer.Repositories;
 using Microsoft.Extensions.Caching.Hybrid;
 
 namespace BusinessLayer.Features.Enrollments;
@@ -14,10 +15,10 @@ public sealed class EnrollmentCardCache
         _cache = cache;
     }
 
-    public async Task<EnrollmentCard?> GetOrLoadAsync(
+    public async Task<EnrollmentCardRow?> GetOrLoadAsync(
         long userId,
         long enrollmentId,
-        Func<CancellationToken, Task<EnrollmentCard?>> load,
+        Func<CancellationToken, Task<EnrollmentCardRow?>> load,
         CancellationToken ct)
     {
         var stored = await _cache.GetOrCreateAsync(
@@ -63,6 +64,6 @@ public sealed class EnrollmentCardCache
 
     private sealed class StoredEnrollmentCard
     {
-        public EnrollmentCard? Card { get; set; }
+        public EnrollmentCardRow? Card { get; set; }
     }
 }

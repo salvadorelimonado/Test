@@ -1,4 +1,5 @@
 using BusinessLayer.Result;
+using DataAccessLayer.Repositories;
 using DataAccessLayer.UnitOfWork;
 
 namespace BusinessLayer.Features.Enrollments.Get;
@@ -14,7 +15,7 @@ public sealed class GetEnrollmentService
         _cardCache = cardCache;
     }
 
-    public async Task<OperationResult<EnrollmentCard>> GetAsync(GetEnrollmentQuery query, CancellationToken ct)
+    public async Task<OperationResult<EnrollmentCardRow>> GetAsync(GetEnrollmentQuery query, CancellationToken ct)
     {
         var card = await _cardCache.GetOrLoadAsync(
             query.UserId,
@@ -24,13 +25,13 @@ public sealed class GetEnrollmentService
 
         if (card is null)
         {
-            return new OperationResult<EnrollmentCard>.NotFound();
+            return new OperationResult<EnrollmentCardRow>.NotFound();
         }
 
-        return new OperationResult<EnrollmentCard>.Ok(card);
+        return new OperationResult<EnrollmentCardRow>.Ok(card);
     }
 
-    private async Task<EnrollmentCard?> LoadAsync(GetEnrollmentQuery query, CancellationToken ct)
+    private async Task<EnrollmentCardRow?> LoadAsync(GetEnrollmentQuery query, CancellationToken ct)
     {
         var row = await _unitOfWork.Enrollment.FindCardAsync(query.EnrollmentId, query.UserId, ct);
         if (row is null)
@@ -38,6 +39,11 @@ public sealed class GetEnrollmentService
             return null;
         }
 
-        return EnrollmentCard.Create(row);
+        if (row.Pass is null)
+        {
+            throw new InvalidOperationException("Pass was not found.");
+        }
+
+        return row;
     }
 }

@@ -3,6 +3,7 @@ using BusinessLayer.Features.Enrollments;
 using BusinessLayer.Features.Enrollments.Waitlist;
 using BusinessLayer.Result;
 using DataAccessLayer.Entities;
+using DataAccessLayer.Repositories;
 using DataAccessLayer.UnitOfWork;
 
 namespace BusinessLayer.Features.Enrollments.ChangeSeats;
@@ -20,13 +21,13 @@ public sealed class ChangeSeatsService
         _cardCache = cardCache;
     }
 
-    public async Task<OperationResult<EnrollmentCard>> ChangeAsync(ChangeSeatsCommand command, CancellationToken ct)
+    public async Task<OperationResult<EnrollmentCardRow>> ChangeAsync(ChangeSeatsCommand command, CancellationToken ct)
     {
         var attempt = await _unitOfWork.ExecuteInTransactionAsync(
             token => ChangeLockedAsync(command, token),
-            result => result.Result is OperationResult<EnrollmentCard>.Ok || result.QueueChanged,
+            result => result.Result is OperationResult<EnrollmentCardRow>.Ok || result.QueueChanged,
             ct);
-        if (attempt.Result is OperationResult<EnrollmentCard>.Ok || attempt.QueueChanged)
+        if (attempt.Result is OperationResult<EnrollmentCardRow>.Ok || attempt.QueueChanged)
         {
             foreach (var userId in attempt.AffectedUserIds.Distinct())
             {
@@ -42,7 +43,7 @@ public sealed class ChangeSeatsService
         var owner = await _unitOfWork.Enrollment.FindOwnerAsync(command.EnrollmentId, ct);
         if (owner is null || owner.UserId != command.UserId)
         {
-            return Failed(new OperationResult<EnrollmentCard>.NotFound());
+            return Failed(new OperationResult<EnrollmentCardRow>.NotFound());
         }
 
         var scheduledClass = await _unitOfWork.Class.GetByIdForUpdateAsync(owner.ClassId, ct);
@@ -54,23 +55,23 @@ public sealed class ChangeSeatsService
         var enrollment = await _unitOfWork.Enrollment.GetByIdForUpdateAsync(command.EnrollmentId, ct);
         if (enrollment is null || enrollment.UserId != command.UserId)
         {
-            return Failed(new OperationResult<EnrollmentCard>.NotFound());
+            return Failed(new OperationResult<EnrollmentCardRow>.NotFound());
         }
 
         if (enrollment.Status == EnrollmentStatus.Cancelled)
         {
-            return Failed(new OperationResult<EnrollmentCard>.Conflict(ConflictReason.EnrollmentCancelled));
+            return Failed(new OperationResult<EnrollmentCardRow>.Conflict(ConflictReason.EnrollmentCancelled));
         }
 
         if (scheduledClass.IsCancelled)
         {
-            return Failed(new OperationResult<EnrollmentCard>.Conflict(ConflictReason.ClassCancelled));
+            return Failed(new OperationResult<EnrollmentCardRow>.Conflict(ConflictReason.ClassCancelled));
         }
 
         var now = _clock.TruncateToMicroseconds();
         if (now >= scheduledClass.StartsAt)
         {
-            return Failed(new OperationResult<EnrollmentCard>.Conflict(ConflictReason.ClassStarted));
+            return Failed(new OperationResult<EnrollmentCardRow>.Conflict(ConflictReason.ClassStarted));
         }
 
         var delta = command.Seats - enrollment.Seats;
@@ -99,16 +100,16 @@ public sealed class ChangeSeatsService
         var card = await CardAsync(enrollment.Id, command.UserId, ct);
         var affectedUserIds = new List<long> { command.UserId };
         affectedUserIds.AddRange(promotedUserIds);
-        return new ChangeAttempt(new OperationResult<EnrollmentCard>.Ok(card), affectedUserIds, false);
+        return new ChangeAttempt(new OperationResult<EnrollmentCardRow>.Ok(card), affectedUserIds, false);
     }
 
-    private static ChangeAttempt Failed(OperationResult<EnrollmentCard> result)
+    private static ChangeAttempt Failed(OperationResult<EnrollmentCardRow> result)
     {
         return new ChangeAttempt(result, [], false);
     }
 
     private sealed record ChangeAttempt(
-        OperationResult<EnrollmentCard> Result,
+        OperationResult<EnrollmentCardRow> Result,
         IReadOnlyList<long> AffectedUserIds,
         bool QueueChanged);
 
@@ -154,14 +155,14 @@ public sealed class ChangeSeatsService
         if (pass.ValidUntil < today)
         {
             return new IncreaseRejection(
-                new OperationResult<EnrollmentCard>.Conflict(ConflictReason.PassExpired),
+                new OperationResult<EnrollmentCardRow>.Conflict(ConflictReason.PassExpired),
                 WaitlistFillResult.None);
         }
 
         if (pass.RemainingVisits < delta)
         {
             return new IncreaseRejection(
-                new OperationResult<EnrollmentCard>.Conflict(ConflictReason.PassExhausted),
+                new OperationResult<EnrollmentCardRow>.Conflict(ConflictReason.PassExhausted),
                 WaitlistFillResult.None);
         }
 
@@ -170,7 +171,7 @@ public sealed class ChangeSeatsService
         if (freeSeats < delta)
         {
             return new IncreaseRejection(
-                new OperationResult<EnrollmentCard>.Conflict(ConflictReason.CapacityExceeded),
+                new OperationResult<EnrollmentCardRow>.Conflict(ConflictReason.CapacityExceeded),
                 WaitlistFillResult.None);
         }
 
@@ -180,7 +181,7 @@ public sealed class ChangeSeatsService
         if (freeSeats < delta)
         {
             return new IncreaseRejection(
-                new OperationResult<EnrollmentCard>.Conflict(ConflictReason.CapacityExceeded),
+                new OperationResult<EnrollmentCardRow>.Conflict(ConflictReason.CapacityExceeded),
                 promotion);
         }
 
@@ -188,7 +189,7 @@ public sealed class ChangeSeatsService
         if (waitingCount > 0)
         {
             return new IncreaseRejection(
-                new OperationResult<EnrollmentCard>.Conflict(ConflictReason.WaitlistNotEmpty),
+                new OperationResult<EnrollmentCardRow>.Conflict(ConflictReason.WaitlistNotEmpty),
                 promotion);
         }
 
@@ -268,10 +269,10 @@ public sealed class ChangeSeatsService
     }
 
     private sealed record IncreaseRejection(
-        OperationResult<EnrollmentCard> Result,
+        OperationResult<EnrollmentCardRow> Result,
         WaitlistFillResult Promotion);
 
-    private async Task<EnrollmentCard> CardAsync(long enrollmentId, long userId, CancellationToken ct)
+    private async Task<EnrollmentCardRow> CardAsync(long enrollmentId, long userId, CancellationToken ct)
     {
         var row = await _unitOfWork.Enrollment.FindCardAsync(enrollmentId, userId, ct);
         if (row is null)
@@ -279,6 +280,11 @@ public sealed class ChangeSeatsService
             throw new InvalidOperationException("Enrollment was not found.");
         }
 
-        return EnrollmentCard.Create(row);
+        if (row.Pass is null)
+        {
+            throw new InvalidOperationException("Pass was not found.");
+        }
+
+        return row;
     }
 }

@@ -26,7 +26,7 @@ public class AnalyticsController : BaseApiController
         var from = request.From ?? throw new ArgumentNullException(nameof(request.From));
         var to = request.To ?? throw new ArgumentNullException(nameof(request.To));
 
-        var listing = await _getLoadService.GetAsync(
+        var rows = await _getLoadService.GetAsync(
             new GetLoadQuery
             {
                 From = from,
@@ -34,6 +34,6 @@ public class AnalyticsController : BaseApiController
                 RoomId = request.RoomId
             },
             ct);
-        return Ok(LoadMapper.ToResponse(listing));
+        return Ok(LoadMapper.ToResponse(rows));
     }
 }
