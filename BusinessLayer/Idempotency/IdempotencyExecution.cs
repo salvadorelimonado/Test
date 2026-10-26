@@ -1,3 +1,5 @@
+using System.Data;
+using System.Data.Common;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -5,6 +7,7 @@ using DataAccessLayer.Database;
 using DataAccessLayer.Entities;
 using DataAccessLayer.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace BusinessLayer.Idempotency;
 
@@ -66,6 +69,8 @@ public sealed class IdempotencyExecution
         where TResult : class
     {
         await using var transaction = await _unitOfWork.DbContext.Database.BeginTransactionAsync(cancellationToken);
+        // решение: один и тот же ключ сериализуется до проверки мест. Иначе повтор не доходит до записи и отвечает 409.
+        await LockSameKeyAsync(userId, operation, keyHash, cancellationToken);
         var existing = await _unitOfWork.Idempotency.FindAsync(userId, operation, keyHash, cancellationToken);
         if (existing is not null)
         {
@@ -138,6 +143,38 @@ public sealed class IdempotencyExecution
         }
 
         return success(response);
+    }
+
+    private async Task LockSameKeyAsync(
+        long userId,
+        IdempotencyOperation operation,
+        byte[] keyHash,
+        CancellationToken cancellationToken)
+    {
+        var transaction = _unitOfWork.DbContext.Database.CurrentTransaction;
+        if (transaction is null)
+        {
+            throw new ArgumentNullException(nameof(transaction));
+        }
+
+        var connection = _unitOfWork.DbContext.Database.GetDbConnection();
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction.GetDbTransaction();
+        command.CommandText =
+            "SELECT pg_advisory_xact_lock(hashtextextended(@userId::text || ':' || @operation::text || ':' || encode(@key, 'hex'), 0))";
+        AddParameter(command, "userId", DbType.Int64, userId);
+        AddParameter(command, "operation", DbType.Int32, (int)operation);
+        AddParameter(command, "key", DbType.Binary, keyHash);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+    }
+
+    private static void AddParameter(DbCommand command, string name, DbType type, object value)
+    {
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = name;
+        parameter.DbType = type;
+        parameter.Value = value;
+        command.Parameters.Add(parameter);
     }
 
     private static byte[] Hash(string value)
