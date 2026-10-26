@@ -1,3 +1,4 @@
+using DataAccessLayer.Database;
 using DataAccessLayer.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -12,7 +13,7 @@ public class EnrollmentConfiguration : IEntityTypeConfiguration<Enrollment>
 
         builder.Property(x => x.RefundedVisits).HasDefaultValue(0);
 
-        builder.Property(x => x.Status).HasConversion<string>().IsRequired();
+        builder.Property(x => x.Status).HasConversion(LowercaseEnumConverter.Create<EnrollmentStatus>()).IsRequired();
 
         builder
             .HasOne<User>()

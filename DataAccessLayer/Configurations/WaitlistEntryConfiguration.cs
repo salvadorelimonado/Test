@@ -1,3 +1,4 @@
+using DataAccessLayer.Database;
 using DataAccessLayer.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -10,7 +11,7 @@ public class WaitlistEntryConfiguration : IEntityTypeConfiguration<WaitlistEntry
     {
         builder.HasKey(x => x.Id);
 
-        builder.Property(x => x.Status).HasConversion<string>().IsRequired();
+        builder.Property(x => x.Status).HasConversion(LowercaseEnumConverter.Create<WaitlistStatus>()).IsRequired();
 
         builder
             .HasOne<User>()
@@ -32,7 +33,7 @@ public class WaitlistEntryConfiguration : IEntityTypeConfiguration<WaitlistEntry
 
         builder.HasIndex(x => new { x.UserId, x.ClassId })
             .IsUnique()
-            .HasFilter($"status = '{nameof(WaitlistStatus.Waiting)}'");
+            .HasFilter($"status = '{LowercaseEnumConverter.ToColumn(WaitlistStatus.Waiting)}'");
 
         builder.ToTable(table => table.HasCheckConstraint(
             "ck_waitlist_entries_seats",

@@ -307,7 +307,7 @@ namespace DataAccessLayer.Migrations
                     b.HasIndex("UserId", "ClassId")
                         .IsUnique()
                         .HasDatabaseName("ix_waitlist_entries_user_id_class_id")
-                        .HasFilter("status = 'Waiting'");
+                        .HasFilter("status = 'waiting'");
 
                     b.HasIndex("ClassId", "Status", "CreatedAt", "Id")
                         .HasDatabaseName("ix_waitlist_entries_class_id_status_created_at_id");
