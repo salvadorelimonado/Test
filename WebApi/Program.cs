@@ -54,7 +54,7 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<IdempotencyService>();
-builder.Services.AddScoped<EnrollmentCardCache>();
+builder.Services.AddSingleton<EnrollmentCardCache>();
 builder.Services.AddScoped<CreateEnrollmentService>();
 builder.Services.AddScoped<ChangeSeatsService>();
 builder.Services.AddScoped<CancelEnrollmentService>();

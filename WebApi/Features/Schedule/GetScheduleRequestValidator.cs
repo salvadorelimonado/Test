@@ -13,8 +13,6 @@ public sealed class GetScheduleRequestValidator : AbstractValidator<GetScheduleR
             .When(request => request.From is not null && request.To is not null);
         RuleFor(request => request.Limit)
             .Must(limit => limit is null || (limit >= SchedulePaginationLimits.MinPageSize && limit <= SchedulePaginationLimits.MaxPageSize));
-        RuleFor(request => request.ContinuationToken)
-            .Must((request, token) => string.IsNullOrWhiteSpace(token) || request.Cursor is not null);
     }
 
     private static bool IsAfterFrom(DateTime? from, DateTime? to)

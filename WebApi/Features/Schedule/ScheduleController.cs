@@ -32,7 +32,7 @@ public class ScheduleController : BaseApiController
             To = to,
             RoomId = request.RoomId,
             Limit = request.Limit ?? SchedulePaginationLimits.DefaultPageSize,
-            Cursor = request.Cursor
+            Cursor = request.ContinuationToken
         };
         var rows = await _getScheduleService.GetAsync(query, ct);
         return Ok(ScheduleMapper.ToResponse(rows, query.Limit));

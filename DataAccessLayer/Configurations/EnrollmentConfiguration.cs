@@ -23,7 +23,9 @@ public class EnrollmentConfiguration : IEntityTypeConfiguration<Enrollment>
         builder
             .HasOne(x => x.Class)
             .WithMany(x => x.Enrollments)
-            .HasForeignKey(x => x.ClassId);
+            .HasForeignKey(x => x.ClassId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.Cascade);
 
         builder.HasIndex(x => new { x.ClassId, x.Status })
             .IncludeProperties(x => x.Seats);
