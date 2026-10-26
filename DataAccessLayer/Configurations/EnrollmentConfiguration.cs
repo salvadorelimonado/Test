@@ -10,6 +10,8 @@ public class EnrollmentConfiguration : IEntityTypeConfiguration<Enrollment>
     {
         builder.HasKey(x => x.Id);
 
+        builder.Property(x => x.RefundedVisits).HasDefaultValue(0);
+
         builder.Property(x => x.Status)
             .HasConversion(
                 status => EnrollmentStatusMapping.ToContract(status),
