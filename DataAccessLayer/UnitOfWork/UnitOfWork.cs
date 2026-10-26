@@ -15,6 +15,8 @@ public interface IUnitOfWork : IUnitOfWorkBase
     IPassRepository Pass { get; }
 
     IIdempotencyRepository Idempotency { get; }
+
+    IWaitlistRepository Waitlist { get; }
 }
 
 public class UnitOfWork : UnitOfWorkBase, IUnitOfWork
@@ -35,4 +37,7 @@ public class UnitOfWork : UnitOfWorkBase, IUnitOfWork
 
     public IIdempotencyRepository Idempotency =>
         GetRepository<IdempotencyRecord, IIdempotencyRepository>(set => new IdempotencyRepository(set));
+
+    public IWaitlistRepository Waitlist =>
+        GetRepository<WaitlistEntry, IWaitlistRepository>(set => new WaitlistRepository(set));
 }
