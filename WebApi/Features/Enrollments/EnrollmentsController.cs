@@ -4,10 +4,12 @@ using Microsoft.AspNetCore.RateLimiting;
 using BusinessLayer.Features.Enrollments.Cancel;
 using BusinessLayer.Features.Enrollments.ChangeSeats;
 using BusinessLayer.Features.Enrollments.Create;
+using BusinessLayer.Features.Enrollments.Get;
 using WebApi.Controllers;
 using WebApi.Features.Enrollments.Cancel;
 using WebApi.Features.Enrollments.ChangeSeats;
 using WebApi.Features.Enrollments.Create;
+using WebApi.Features.Enrollments.Get;
 using WebApi.Helpers;
 using WebApi.Idempotency;
 using WebApi.RateLimiting;
@@ -23,17 +25,20 @@ public class EnrollmentsController : BaseApiController
     private readonly CreateEnrollmentService _createEnrollmentService;
     private readonly ChangeSeatsService _changeSeatsService;
     private readonly CancelEnrollmentService _cancelEnrollmentService;
+    private readonly GetEnrollmentService _getEnrollmentService;
     private readonly IdempotencyKeyReader _idempotencyKeyReader;
 
     public EnrollmentsController(
         CreateEnrollmentService createEnrollmentService,
         ChangeSeatsService changeSeatsService,
         CancelEnrollmentService cancelEnrollmentService,
+        GetEnrollmentService getEnrollmentService,
         IdempotencyKeyReader idempotencyKeyReader)
     {
         _createEnrollmentService = createEnrollmentService;
         _changeSeatsService = changeSeatsService;
         _cancelEnrollmentService = cancelEnrollmentService;
+        _getEnrollmentService = getEnrollmentService;
         _idempotencyKeyReader = idempotencyKeyReader;
     }
 
@@ -95,5 +100,22 @@ public class EnrollmentsController : BaseApiController
         };
         var result = await _cancelEnrollmentService.CancelAsync(command, ct);
         return CancelEnrollmentResultToActionResultMapper.From(result);
+    }
+
+    [HttpGet("{id:long}")]
+    public async Task<IActionResult> Get(long id, CancellationToken ct)
+    {
+        if (!TryGetCurrentUserId(out var userId))
+        {
+            return Unauthorized();
+        }
+
+        var command = new GetEnrollmentCommand
+        {
+            UserId = userId,
+            EnrollmentId = id
+        };
+        var result = await _getEnrollmentService.GetAsync(command, ct);
+        return GetEnrollmentResultToActionResultMapper.From(result);
     }
 }
