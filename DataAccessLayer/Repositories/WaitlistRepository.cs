@@ -60,4 +60,11 @@ public class WaitlistRepository : GenericRepository<WaitlistEntry>, IWaitlistRep
                 && (entry.CreatedAt < createdAt || (entry.CreatedAt == createdAt && entry.Id <= entryId)),
             ct);
     }
+
+    public Task<int> CountWaitingAsync(long classId, CancellationToken ct = default)
+    {
+        return _dbSet.CountAsync(
+            entry => entry.ClassId == classId && entry.Status == WaitlistStatus.Waiting,
+            ct);
+    }
 }

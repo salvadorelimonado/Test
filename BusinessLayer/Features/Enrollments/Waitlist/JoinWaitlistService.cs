@@ -59,8 +59,17 @@ public sealed class JoinWaitlistService
             return Reject(JoinWaitlistResult.Conflict(EnrollmentConflictConstants.AlreadyWaiting));
         }
 
+        // решение: заявка больше вместимости никогда не продвинется и остановит хвост, поэтому её не ставим.
+        if (command.Seats > scheduledClass.Capacity)
+        {
+            return Reject(JoinWaitlistResult.Conflict(EnrollmentConflictConstants.ExceedsCapacity));
+        }
+
         var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(command.ClassId, ct);
-        if (takenSeats + command.Seats <= scheduledClass.Capacity)
+        var freeSeats = scheduledClass.Capacity - takenSeats;
+        var waitingCount = await _unitOfWork.Waitlist.CountWaitingAsync(command.ClassId, ct);
+        // решение: строгий FIFO. Если кто-то уже ждёт, новичка не отправляем записываться мимо очереди.
+        if (waitingCount == 0 && freeSeats >= command.Seats)
         {
             return Reject(JoinWaitlistResult.Conflict(EnrollmentConflictConstants.SeatsAvailable));
         }

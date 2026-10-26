@@ -21,4 +21,8 @@ public static class EnrollmentConflictConstants
     public const string AlreadyWaiting = "already-waiting";
 
     public const string AlreadyPromoted = "already-promoted";
+
+    public const string ExceedsCapacity = "exceeds-capacity";
+
+    public const string WaitlistNotEmpty = "waitlist-not-empty";
 }

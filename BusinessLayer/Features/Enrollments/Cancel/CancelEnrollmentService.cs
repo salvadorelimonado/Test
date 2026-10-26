@@ -167,6 +167,7 @@ public sealed class CancelEnrollmentService
         var promotedUserIds = new List<long>();
         foreach (var entry in waiting)
         {
+            // решение: строгий FIFO по всем свободным местам. Голове не хватает — останавливаемся, следующих не пропускаем.
             if (entry.Seats > remainingSeats)
             {
                 break;

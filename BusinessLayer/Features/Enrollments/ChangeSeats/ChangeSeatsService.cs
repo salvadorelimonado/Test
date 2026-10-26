@@ -149,9 +149,17 @@ public sealed class ChangeSeatsService
         }
 
         var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(enrollment.ClassId, ct);
-        if (takenSeats + delta > scheduledClass.Capacity)
+        var freeSeats = scheduledClass.Capacity - takenSeats;
+        if (freeSeats < delta)
         {
             return ChangeSeatsResult.Conflict(EnrollmentConflictConstants.CapacityExceeded);
+        }
+
+        // решение: пока очередь не пуста, увеличение мест не забирает то, что копится для её головы.
+        var waitingCount = await _unitOfWork.Waitlist.CountWaitingAsync(enrollment.ClassId, ct);
+        if (waitingCount > 0)
+        {
+            return ChangeSeatsResult.Conflict(EnrollmentConflictConstants.WaitlistNotEmpty);
         }
 
         return null;
@@ -211,6 +219,7 @@ public sealed class ChangeSeatsService
         var promotedUserIds = new List<long>();
         foreach (var entry in waiting)
         {
+            // решение: строгий FIFO по всем свободным местам. Голове не хватает — останавливаемся, следующих не пропускаем.
             if (entry.Seats > remainingSeats)
             {
                 break;

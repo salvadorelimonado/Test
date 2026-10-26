@@ -14,4 +14,6 @@ public interface IWaitlistRepository : IGenericRepository<WaitlistEntry>
     Task<WaitlistEntry?> FindWaitingAsync(long userId, long classId, CancellationToken ct = default);
 
     Task<int> CountWaitingPositionAsync(long classId, DateTime createdAt, long entryId, CancellationToken ct = default);
+
+    Task<int> CountWaitingAsync(long classId, CancellationToken ct = default);
 }

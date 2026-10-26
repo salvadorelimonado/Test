@@ -84,9 +84,17 @@ public sealed class CreateEnrollmentService
         }
 
         var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(command.ClassId, ct);
-        if (takenSeats + command.Seats > scheduledClass.Capacity)
+        var freeSeats = scheduledClass.Capacity - takenSeats;
+        if (freeSeats < command.Seats)
         {
             return Reject(CreateEnrollmentResult.Conflict(EnrollmentConflictConstants.CapacityExceeded));
+        }
+
+        // решение: пока очередь не пуста, новая бронь не забирает места, которые копятся для её головы.
+        var waitingCount = await _unitOfWork.Waitlist.CountWaitingAsync(command.ClassId, ct);
+        if (waitingCount > 0)
+        {
+            return Reject(CreateEnrollmentResult.Conflict(EnrollmentConflictConstants.WaitlistNotEmpty));
         }
 
         var enrollment = new Enrollment
