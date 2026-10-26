@@ -6,7 +6,7 @@ namespace WebApi.Controllers;
 
 public abstract class BaseApiController : ControllerBase
 {
-    protected const string AdminRole = "admin";
+    public const string AdminRole = "admin";
 
     protected bool IsAdmin => User.IsInRole(AdminRole);
 
