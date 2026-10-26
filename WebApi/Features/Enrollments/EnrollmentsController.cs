@@ -29,6 +29,7 @@ public class EnrollmentsController : BaseApiController
     private readonly CancelEnrollmentService _cancelEnrollmentService;
     private readonly GetEnrollmentService _getEnrollmentService;
     private readonly JoinWaitlistService _joinWaitlistService;
+    private readonly LeaveWaitlistService _leaveWaitlistService;
     private readonly IdempotencyKeyReader _idempotencyKeyReader;
 
     public EnrollmentsController(
@@ -37,6 +38,7 @@ public class EnrollmentsController : BaseApiController
         CancelEnrollmentService cancelEnrollmentService,
         GetEnrollmentService getEnrollmentService,
         JoinWaitlistService joinWaitlistService,
+        LeaveWaitlistService leaveWaitlistService,
         IdempotencyKeyReader idempotencyKeyReader)
     {
         _createEnrollmentService = createEnrollmentService;
@@ -44,6 +46,7 @@ public class EnrollmentsController : BaseApiController
         _cancelEnrollmentService = cancelEnrollmentService;
         _getEnrollmentService = getEnrollmentService;
         _joinWaitlistService = joinWaitlistService;
+        _leaveWaitlistService = leaveWaitlistService;
         _idempotencyKeyReader = idempotencyKeyReader;
     }
 
@@ -95,6 +98,23 @@ public class EnrollmentsController : BaseApiController
         };
         var result = await _joinWaitlistService.JoinAsync(command, ct);
         return JoinWaitlistResultToActionResultMapper.From(result);
+    }
+
+    [HttpPost("waitlist/{id:long}/cancel")]
+    public async Task<IActionResult> LeaveWaitlist(long id, CancellationToken ct)
+    {
+        if (!TryGetCurrentUserId(out var userId))
+        {
+            return Unauthorized();
+        }
+
+        var command = new LeaveWaitlistCommand
+        {
+            UserId = userId,
+            EntryId = id
+        };
+        var result = await _leaveWaitlistService.LeaveAsync(command, ct);
+        return LeaveWaitlistResultToActionResultMapper.From(result);
     }
 
     [HttpPost("{id:long}/seats")]
