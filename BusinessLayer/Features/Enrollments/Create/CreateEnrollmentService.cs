@@ -139,11 +139,13 @@ public sealed class CreateEnrollmentService
             return BookedEnrollment.Stop(new OperationResult<CreatedEnrollment>.Conflict(ConflictReason.ClassStarted));
         }
 
-        var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(command.UserId, ct);
-        if (pass is null)
-        {
-            throw new InvalidOperationException("Pass was not found.");
-        }
+        var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(command.ClassId, ct);
+        var freeSeats = scheduledClass.Capacity - takenSeats;
+        var pass = await LockOwnerAndQueueAsync(
+            scheduledClass,
+            command.UserId,
+            freeSeats >= command.Seats ? freeSeats : 0,
+            ct);
 
         var today = DateOnly.FromDateTime(now);
         if (pass.ValidUntil < today)
@@ -156,14 +158,12 @@ public sealed class CreateEnrollmentService
             return BookedEnrollment.Stop(new OperationResult<CreatedEnrollment>.Conflict(ConflictReason.PassExhausted));
         }
 
-        var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(command.ClassId, ct);
-        var freeSeats = scheduledClass.Capacity - takenSeats;
         if (freeSeats < command.Seats)
         {
             return BookedEnrollment.Stop(new OperationResult<CreatedEnrollment>.Conflict(ConflictReason.CapacityExceeded));
         }
 
-        var promotion = await PromoteWaitingAsync(scheduledClass, now, ct);
+        var promotion = await PromoteWaitingAsync(scheduledClass, now, command.UserId, ct);
         takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(command.ClassId, ct);
         freeSeats = scheduledClass.Capacity - takenSeats;
         if (freeSeats < command.Seats)
@@ -206,7 +206,11 @@ public sealed class CreateEnrollmentService
         return new BookedEnrollment(new OperationResult<CreatedEnrollment>.Ok(response), promotion);
     }
 
-    private async Task<WaitlistFillResult> PromoteWaitingAsync(Class scheduledClass, DateTime now, CancellationToken ct)
+    private async Task<WaitlistFillResult> PromoteWaitingAsync(
+        Class scheduledClass,
+        DateTime now,
+        long ownerUserId,
+        CancellationToken ct)
     {
         if (scheduledClass.IsCancelled)
         {
@@ -226,8 +230,44 @@ public sealed class CreateEnrollmentService
             return WaitlistFillResult.None;
         }
 
+        var passes = await LockPassesAsync(
+            WaitlistFillResult.InLockOrder(WaitlistFillResult.UserIdsWithinFreeSeats(waiting, freeSeats), ownerUserId),
+            ct);
+        var result = WaitlistFillResult.Fill(scheduledClass, waiting, passes, freeSeats, now);
+        if (result.Changed)
+        {
+            await _unitOfWork.SaveChangesAsync(ct);
+        }
+
+        return result;
+    }
+
+    private async Task<Pass> LockOwnerAndQueueAsync(
+        Class scheduledClass,
+        long ownerUserId,
+        int freeSeats,
+        CancellationToken ct)
+    {
+        IReadOnlyList<long> queueUserIds = [];
+        if (freeSeats > 0)
+        {
+            var waiting = await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct);
+            queueUserIds = WaitlistFillResult.UserIdsWithinFreeSeats(waiting, freeSeats);
+        }
+
+        var passes = await LockPassesAsync(WaitlistFillResult.InLockOrder(queueUserIds, ownerUserId), ct);
+        if (!passes.TryGetValue(ownerUserId, out var pass))
+        {
+            throw new InvalidOperationException("Pass was not found.");
+        }
+
+        return pass;
+    }
+
+    private async Task<Dictionary<long, Pass>> LockPassesAsync(IReadOnlyList<long> userIds, CancellationToken ct)
+    {
         var passes = new Dictionary<long, Pass>();
-        foreach (var userId in WaitlistFillResult.UserIdsWithinFreeSeats(waiting, freeSeats).Distinct().OrderBy(id => id))
+        foreach (var userId in userIds)
         {
             var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(userId, ct);
             if (pass is null)
@@ -238,13 +278,7 @@ public sealed class CreateEnrollmentService
             passes.Add(userId, pass);
         }
 
-        var result = WaitlistFillResult.Fill(scheduledClass, waiting, passes, freeSeats, now);
-        if (result.Changed)
-        {
-            await _unitOfWork.SaveChangesAsync(ct);
-        }
-
-        return result;
+        return passes;
     }
 
     private sealed record BookingAttempt(

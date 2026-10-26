@@ -138,7 +138,7 @@ public sealed class JoinWaitlistService
             return JoinAttempt.Stop(new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.ExceedsCapacity));
         }
 
-        var promotion = await PromoteWaitingAsync(scheduledClass, now, ct);
+        var promotion = await PromoteWaitingAsync(scheduledClass, now, command.UserId, ct);
         var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(command.ClassId, ct);
         var freeSeats = scheduledClass.Capacity - takenSeats;
         var waitingCount = await _unitOfWork.Waitlist.CountWaitingAsync(command.ClassId, ct);
@@ -203,7 +203,11 @@ public sealed class JoinWaitlistService
             promotion.Changed);
     }
 
-    private async Task<WaitlistFillResult> PromoteWaitingAsync(Class scheduledClass, DateTime now, CancellationToken ct)
+    private async Task<WaitlistFillResult> PromoteWaitingAsync(
+        Class scheduledClass,
+        DateTime now,
+        long joinerUserId,
+        CancellationToken ct)
     {
         if (scheduledClass.IsCancelled)
         {
@@ -223,8 +227,22 @@ public sealed class JoinWaitlistService
             return WaitlistFillResult.None;
         }
 
+        var passes = await LockPassesAsync(
+            WaitlistFillResult.InLockOrder(WaitlistFillResult.UserIdsWithinFreeSeats(waiting, freeSeats), joinerUserId),
+            ct);
+        var result = WaitlistFillResult.Fill(scheduledClass, waiting, passes, freeSeats, now);
+        if (result.Changed)
+        {
+            await _unitOfWork.SaveChangesAsync(ct);
+        }
+
+        return result;
+    }
+
+    private async Task<Dictionary<long, Pass>> LockPassesAsync(IReadOnlyList<long> userIds, CancellationToken ct)
+    {
         var passes = new Dictionary<long, Pass>();
-        foreach (var userId in WaitlistFillResult.UserIdsWithinFreeSeats(waiting, freeSeats).Distinct().OrderBy(id => id))
+        foreach (var userId in userIds)
         {
             var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(userId, ct);
             if (pass is null)
@@ -235,13 +253,7 @@ public sealed class JoinWaitlistService
             passes.Add(userId, pass);
         }
 
-        var result = WaitlistFillResult.Fill(scheduledClass, waiting, passes, freeSeats, now);
-        if (result.Changed)
-        {
-            await _unitOfWork.SaveChangesAsync(ct);
-        }
-
-        return result;
+        return passes;
     }
 
     private sealed record JoinAttempt(

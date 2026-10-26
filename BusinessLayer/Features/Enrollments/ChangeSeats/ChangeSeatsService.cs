@@ -51,12 +51,6 @@ public sealed class ChangeSeatsService
             throw new InvalidOperationException("Class was not found.");
         }
 
-        var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(command.UserId, ct);
-        if (pass is null)
-        {
-            throw new InvalidOperationException("Pass was not found.");
-        }
-
         var enrollment = await _unitOfWork.Enrollment.GetByIdForUpdateAsync(command.EnrollmentId, ct);
         if (enrollment is null || enrollment.UserId != command.UserId)
         {
@@ -80,27 +74,29 @@ public sealed class ChangeSeatsService
         }
 
         var delta = command.Seats - enrollment.Seats;
-        if (delta > 0)
-        {
-            var rejection = await RejectIncreaseAsync(scheduledClass, pass, enrollment, delta, now, ct);
-            if (rejection is not null)
-            {
-                return new ChangeAttempt(rejection.Result, rejection.Promotion.PromotedUserIds, rejection.Promotion.Changed);
-            }
-        }
-
         var promotedUserIds = new List<long>();
         if (delta != 0)
         {
+            var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(scheduledClass.Id, ct);
+            var freeNow = scheduledClass.Capacity - takenSeats;
+            var pass = await LockOwnerAndQueueAsync(scheduledClass, command.UserId, QueueFreeSeats(delta, freeNow), ct);
+            if (delta > 0)
+            {
+                var rejection = await RejectIncreaseAsync(scheduledClass, pass, enrollment, delta, now, command.UserId, ct);
+                if (rejection is not null)
+                {
+                    return new ChangeAttempt(rejection.Result, rejection.Promotion.PromotedUserIds, rejection.Promotion.Changed);
+                }
+            }
+
             enrollment.Seats = command.Seats;
             pass.RemainingVisits -= delta;
             await _unitOfWork.SaveChangesAsync(ct);
-        }
-
-        if (delta < 0)
-        {
-            var promotion = await PromoteWaitingAsync(scheduledClass, now, ct);
-            promotedUserIds.AddRange(promotion.PromotedUserIds);
+            if (delta < 0)
+            {
+                var promotion = await PromoteWaitingAsync(scheduledClass, now, command.UserId, ct);
+                promotedUserIds.AddRange(promotion.PromotedUserIds);
+            }
         }
 
         var card = await CardAsync(enrollment.Id, command.UserId, ct);
@@ -125,6 +121,7 @@ public sealed class ChangeSeatsService
         Enrollment enrollment,
         int delta,
         DateTime now,
+        long ownerUserId,
         CancellationToken ct)
     {
         var today = DateOnly.FromDateTime(now);
@@ -151,7 +148,7 @@ public sealed class ChangeSeatsService
                 WaitlistFillResult.None);
         }
 
-        var promotion = await PromoteWaitingAsync(scheduledClass, now, ct);
+        var promotion = await PromoteWaitingAsync(scheduledClass, now, ownerUserId, ct);
         takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(enrollment.ClassId, ct);
         freeSeats = scheduledClass.Capacity - takenSeats;
         if (freeSeats < delta)
@@ -172,7 +169,11 @@ public sealed class ChangeSeatsService
         return null;
     }
 
-    private async Task<WaitlistFillResult> PromoteWaitingAsync(Class scheduledClass, DateTime now, CancellationToken ct)
+    private async Task<WaitlistFillResult> PromoteWaitingAsync(
+        Class scheduledClass,
+        DateTime now,
+        long ownerUserId,
+        CancellationToken ct)
     {
         if (scheduledClass.IsCancelled)
         {
@@ -192,8 +193,65 @@ public sealed class ChangeSeatsService
             return WaitlistFillResult.None;
         }
 
+        var passes = await LockPassesAsync(
+            WaitlistFillResult.InLockOrder(WaitlistFillResult.UserIdsWithinFreeSeats(waiting, freeSeats), ownerUserId),
+            ct);
+        var result = WaitlistFillResult.Fill(scheduledClass, waiting, passes, freeSeats, now);
+        if (result.Changed)
+        {
+            await _unitOfWork.SaveChangesAsync(ct);
+        }
+
+        return result;
+    }
+
+    private static int QueueFreeSeats(int delta, int freeNow)
+    {
+        if (delta > 0)
+        {
+            return freeNow >= delta ? freeNow : 0;
+        }
+
+        var predicted = (long)freeNow - delta;
+        if (predicted <= 0)
+        {
+            return 0;
+        }
+
+        if (predicted > int.MaxValue)
+        {
+            return int.MaxValue;
+        }
+
+        return (int)predicted;
+    }
+
+    private async Task<Pass> LockOwnerAndQueueAsync(
+        Class scheduledClass,
+        long ownerUserId,
+        int freeSeats,
+        CancellationToken ct)
+    {
+        IReadOnlyList<long> queueUserIds = [];
+        if (freeSeats > 0)
+        {
+            var waiting = await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct);
+            queueUserIds = WaitlistFillResult.UserIdsWithinFreeSeats(waiting, freeSeats);
+        }
+
+        var passes = await LockPassesAsync(WaitlistFillResult.InLockOrder(queueUserIds, ownerUserId), ct);
+        if (!passes.TryGetValue(ownerUserId, out var pass))
+        {
+            throw new InvalidOperationException("Pass was not found.");
+        }
+
+        return pass;
+    }
+
+    private async Task<Dictionary<long, Pass>> LockPassesAsync(IReadOnlyList<long> userIds, CancellationToken ct)
+    {
         var passes = new Dictionary<long, Pass>();
-        foreach (var userId in WaitlistFillResult.UserIdsWithinFreeSeats(waiting, freeSeats).Distinct().OrderBy(id => id))
+        foreach (var userId in userIds)
         {
             var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(userId, ct);
             if (pass is null)
@@ -204,13 +262,7 @@ public sealed class ChangeSeatsService
             passes.Add(userId, pass);
         }
 
-        var result = WaitlistFillResult.Fill(scheduledClass, waiting, passes, freeSeats, now);
-        if (result.Changed)
-        {
-            await _unitOfWork.SaveChangesAsync(ct);
-        }
-
-        return result;
+        return passes;
     }
 
     private sealed record IncreaseRejection(

@@ -32,6 +32,14 @@ public sealed class WaitlistFillResult
         return userIds;
     }
 
+    public static IReadOnlyList<long> InLockOrder(IReadOnlyList<long> queueUserIds, long ownerUserId)
+    {
+        var userIds = new List<long>(queueUserIds.Count + 1);
+        userIds.AddRange(queueUserIds);
+        userIds.Add(ownerUserId);
+        return userIds.Distinct().OrderBy(id => id).ToList();
+    }
+
     public static WaitlistFillResult Fill(
         Class scheduledClass,
         IReadOnlyList<WaitlistEntry> waiting,
