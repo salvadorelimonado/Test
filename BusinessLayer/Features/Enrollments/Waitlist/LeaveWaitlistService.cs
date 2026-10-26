@@ -29,7 +29,7 @@ public sealed class LeaveWaitlistService
         {
             foreach (var userId in model.PromotedUserIds)
             {
-                await _cardCache.InvalidateAsync(userId, ct);
+                await _cardCache.InvalidateAsync(userId);
             }
         }
 

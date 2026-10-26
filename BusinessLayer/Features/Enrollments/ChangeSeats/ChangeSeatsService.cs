@@ -30,7 +30,7 @@ public sealed class ChangeSeatsService
         {
             foreach (var userId in attempt.AffectedUserIds.Distinct())
             {
-                await _cardCache.InvalidateAsync(userId, ct);
+                await _cardCache.InvalidateAsync(userId);
             }
         }
 

@@ -47,7 +47,7 @@ public sealed class CreateEnrollmentService
             var replayed = await ReplayAsync(command, ct);
             if (replayed is OperationResult<CreatedEnrollment>.Ok)
             {
-                await _cardCache.InvalidateAsync(command.UserId, ct);
+                await _cardCache.InvalidateAsync(command.UserId);
             }
 
             return replayed;
@@ -55,12 +55,12 @@ public sealed class CreateEnrollmentService
 
         if (attempt.Result is OperationResult<CreatedEnrollment>.Ok)
         {
-            await _cardCache.InvalidateAsync(command.UserId, ct);
+            await _cardCache.InvalidateAsync(command.UserId);
         }
 
         foreach (var userId in attempt.PromotedUserIds.Distinct())
         {
-            await _cardCache.InvalidateAsync(userId, ct);
+            await _cardCache.InvalidateAsync(userId);
         }
 
         return attempt.Result;

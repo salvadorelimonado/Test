@@ -48,7 +48,7 @@ public sealed class JoinWaitlistService
 
         foreach (var userId in attempt.PromotedUserIds.Distinct())
         {
-            await _cardCache.InvalidateAsync(userId, ct);
+            await _cardCache.InvalidateAsync(userId);
         }
 
         return attempt.Result;

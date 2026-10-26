@@ -30,7 +30,8 @@ public sealed class EnrollmentCardCache
             options: new HybridCacheEntryOptions
             {
                 Expiration = Lifetime,
-                LocalCacheExpiration = Lifetime
+                // решение: локальный кэш не сбрасывается на других экземплярах, поэтому карточку читаем только из Redis.
+                Flags = HybridCacheEntryFlags.DisableLocalCache
             },
             tags: [UserTag(userId)],
             cancellationToken: ct);
@@ -38,9 +39,16 @@ public sealed class EnrollmentCardCache
         return stored.Card;
     }
 
-    public ValueTask InvalidateAsync(long userId, CancellationToken ct)
+    public async Task InvalidateAsync(long userId)
     {
-        return _cache.RemoveByTagAsync(UserTag(userId), ct);
+        try
+        {
+            await _cache.RemoveByTagAsync(UserTag(userId), CancellationToken.None);
+        }
+        catch (Exception)
+        {
+            // решение: сброс идёт после коммита и без токена запроса. Сбой Redis не отменяет уже сохранённую операцию.
+        }
     }
 
     private static string CardKey(long userId, long enrollmentId)
