@@ -16,6 +16,7 @@ using BusinessLayer.Features.Enrollments.Cancel;
 using BusinessLayer.Features.Enrollments.ChangeSeats;
 using BusinessLayer.Features.Enrollments.Create;
 using BusinessLayer.Features.Enrollments.Get;
+using BusinessLayer.Features.Analytics;
 using BusinessLayer.Features.Schedule;
 using BusinessLayer.Idempotency;
 using WebApi.Auth;
@@ -53,6 +54,7 @@ builder.Services.AddScoped<ChangeSeatsService>();
 builder.Services.AddScoped<CancelEnrollmentService>();
 builder.Services.AddScoped<GetEnrollmentService>();
 builder.Services.AddScoped<GetScheduleService>();
+builder.Services.AddScoped<GetLoadService>();
 builder.Services.AddScoped<IdempotencyKeyReader>();
 
 EnrollmentRateLimit.Add(builder.Services);
