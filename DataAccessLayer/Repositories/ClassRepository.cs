@@ -12,6 +12,13 @@ public class ClassRepository : GenericRepository<Class>, IClassRepository
     {
     }
 
+    public override async Task<Class?> GetByIdAsync(long id, CancellationToken ct = default)
+    {
+        return await _dbSet
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(scheduledClass => scheduledClass.Id == id, ct);
+    }
+
     public async Task<Class?> GetWithEnrollmentsAsync(long id, CancellationToken ct = default)
     {
         return await _dbSet
@@ -22,6 +29,7 @@ public class ClassRepository : GenericRepository<Class>, IClassRepository
     public async Task<Class?> GetByIdForUpdateAsync(long id, CancellationToken ct = default)
     {
         return await _dbSet
+            .IgnoreQueryFilters()
             .Where(x => x.Id == id)
             .ForUpdate()
             .FirstOrDefaultAsync(ct);

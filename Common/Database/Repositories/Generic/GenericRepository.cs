@@ -18,7 +18,7 @@ public class GenericRepository<TEntity> : IGenericRepository<TEntity>
         return _dbSet.AsQueryable();
     }
 
-    public async Task<TEntity?> GetByIdAsync(long id, CancellationToken ct = default)
+    public virtual async Task<TEntity?> GetByIdAsync(long id, CancellationToken ct = default)
     {
         return await _dbSet.FirstOrDefaultAsync(e => e.Id == id, ct);
     }
