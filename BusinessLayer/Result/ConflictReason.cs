@@ -12,6 +12,5 @@ public enum ConflictReason
     SeatsAvailable,
     AlreadyWaiting,
     AlreadyPromoted,
-    ExceedsCapacity,
-    WaitlistNotEmpty
+    ExceedsCapacity
 }
