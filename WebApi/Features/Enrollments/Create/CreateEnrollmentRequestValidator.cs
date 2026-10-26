@@ -6,7 +6,6 @@ public sealed class CreateEnrollmentRequestValidator : AbstractValidator<CreateE
 {
     public CreateEnrollmentRequestValidator()
     {
-        RuleFor(request => request.ClassId).NotEqual(0L);
         RuleFor(request => request.Seats).GreaterThanOrEqualTo(1);
     }
 }
