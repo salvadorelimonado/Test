@@ -5,17 +5,17 @@ namespace BusinessLayer.Features.Enrollments.Get;
 public sealed class GetEnrollmentService
 {
     private readonly IUnitOfWork _unitOfWork;
-    private readonly EnrollmentCardCache _cards;
+    private readonly EnrollmentCardCache _cardCache;
 
-    public GetEnrollmentService(IUnitOfWork unitOfWork, EnrollmentCardCache cards)
+    public GetEnrollmentService(IUnitOfWork unitOfWork, EnrollmentCardCache cardCache)
     {
         _unitOfWork = unitOfWork;
-        _cards = cards;
+        _cardCache = cardCache;
     }
 
     public async Task<GetEnrollmentResult> GetAsync(GetEnrollmentCommand command, CancellationToken ct)
     {
-        var lookup = await _cards.ReadAsync(command.UserId, command.EnrollmentId, ct);
+        var lookup = await _cardCache.ReadAsync(command.UserId, command.EnrollmentId, ct);
         if (lookup.Card is not null)
         {
             return GetEnrollmentResult.Found(lookup.Card);
@@ -46,7 +46,7 @@ public sealed class GetEnrollmentService
         }
 
         var card = EnrollmentCard.Create(enrollment, scheduledClass, room, pass);
-        await _cards.SetAsync(command.UserId, lookup.Generation, card, ct);
+        await _cardCache.SetAsync(command.UserId, lookup.Generation, card, ct);
         return GetEnrollmentResult.Found(card);
     }
 }

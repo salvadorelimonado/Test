@@ -1,3 +1,5 @@
+using DataAccessLayer.Entities;
+
 namespace BusinessLayer.Features.Enrollments;
 
 public sealed class EnrollmentCard
@@ -13,6 +15,35 @@ public sealed class EnrollmentCard
     public required EnrollmentCardClass Class { get; init; }
 
     public required EnrollmentCardPass Pass { get; init; }
+
+    public static EnrollmentCard Create(Enrollment enrollment, Class scheduledClass, Room room, Pass pass)
+    {
+        return new EnrollmentCard
+        {
+            Id = enrollment.Id,
+            Status = EnrollmentStatusMapping.ToContract(enrollment.Status),
+            Seats = enrollment.Seats,
+            CreatedAt = enrollment.CreatedAt,
+            Class = new EnrollmentCardClass
+            {
+                Id = scheduledClass.Id,
+                Title = scheduledClass.Title,
+                StartsAt = scheduledClass.StartsAt,
+                DurationMinutes = scheduledClass.DurationMinutes,
+                IsCancelled = scheduledClass.IsCancelled,
+                Room = new EnrollmentCardRoom
+                {
+                    Id = room.Id,
+                    Name = room.Name
+                }
+            },
+            Pass = new EnrollmentCardPass
+            {
+                RemainingVisits = pass.RemainingVisits,
+                ValidUntil = pass.ValidUntil
+            }
+        };
+    }
 }
 
 public sealed class EnrollmentCardClass
