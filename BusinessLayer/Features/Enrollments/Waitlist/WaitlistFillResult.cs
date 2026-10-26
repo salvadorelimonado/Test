@@ -23,7 +23,7 @@ public sealed class WaitlistFillResult
         {
             if (entry.Seats > freeSeats)
             {
-                break;
+                continue;
             }
 
             userIds.Add(entry.UserId);
@@ -109,7 +109,9 @@ public sealed class WaitlistFillResult
         {
             if (entry.Seats > remainingSeats)
             {
-                break;
+                // решение: берём первую заявку, которой хватает мест, а не строго голову очереди.
+                // Большая заявка может ждать долго, зато каждой оставшейся нужно больше мест, чем свободно.
+                continue;
             }
 
             if (!passes.TryGetValue(entry.UserId, out var pass))

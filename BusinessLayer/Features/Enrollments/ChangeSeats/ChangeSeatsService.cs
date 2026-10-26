@@ -87,10 +87,12 @@ public sealed class ChangeSeatsService
             var freeNow = scheduledClass.Capacity - takenSeats;
             var pass = await LockOwnerAndQueueAsync(scheduledClass, command.UserId, QueueFreeSeats(delta, freeNow), ct);
             var rejection = await RejectIncreaseAsync(scheduledClass, pass, enrollment, delta, now, command.UserId, ct);
-            if (rejection is not null)
+            if (rejection.Result is OperationResult<EnrollmentCardRow> rejected)
             {
-                return new ChangeAttempt(rejection.Result, rejection.Promotion.PromotedUserIds, rejection.Promotion.Changed);
+                return new ChangeAttempt(rejected, rejection.Promotion.PromotedUserIds, rejection.Promotion.Changed);
             }
+
+            promotedUserIds.AddRange(rejection.Promotion.PromotedUserIds);
 
             enrollment.Seats = command.Seats;
             pass.RemainingVisits -= delta;
@@ -142,7 +144,7 @@ public sealed class ChangeSeatsService
         return promotion.PromotedUserIds;
     }
 
-    private async Task<IncreaseRejection?> RejectIncreaseAsync(
+    private async Task<IncreaseRejection> RejectIncreaseAsync(
         Class scheduledClass,
         Pass pass,
         Enrollment enrollment,
@@ -185,15 +187,7 @@ public sealed class ChangeSeatsService
                 promotion);
         }
 
-        var waitingCount = await _unitOfWork.Waitlist.CountWaitingAsync(enrollment.ClassId, ct);
-        if (waitingCount > 0)
-        {
-            return new IncreaseRejection(
-                new OperationResult<EnrollmentCardRow>.Conflict(ConflictReason.WaitlistNotEmpty),
-                promotion);
-        }
-
-        return null;
+        return new IncreaseRejection(null, promotion);
     }
 
     private static int QueueFreeSeats(int delta, int freeNow)
@@ -269,7 +263,7 @@ public sealed class ChangeSeatsService
     }
 
     private sealed record IncreaseRejection(
-        OperationResult<EnrollmentCardRow> Result,
+        OperationResult<EnrollmentCardRow>? Result,
         WaitlistFillResult Promotion);
 
     private async Task<EnrollmentCardRow> CardAsync(long enrollmentId, long userId, CancellationToken ct)

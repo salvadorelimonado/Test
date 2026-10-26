@@ -147,8 +147,7 @@ public sealed class JoinWaitlistService
         var promotion = await PromoteWaitingAsync(scheduledClass, now, command.UserId, ct);
         var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(command.ClassId, ct);
         var freeSeats = scheduledClass.Capacity - takenSeats;
-        var waitingCount = await _unitOfWork.Waitlist.CountWaitingAsync(command.ClassId, ct);
-        if (waitingCount == 0 && freeSeats >= command.Seats)
+        if (freeSeats >= command.Seats)
         {
             return new JoinAttempt(
                 new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.SeatsAvailable),

@@ -179,14 +179,6 @@ public sealed class CreateEnrollmentService
                 promotion);
         }
 
-        var waitingCount = await _unitOfWork.Waitlist.CountWaitingAsync(command.ClassId, ct);
-        if (waitingCount > 0)
-        {
-            return new BookedEnrollment(
-                new OperationResult<CreatedEnrollment>.Conflict(ConflictReason.WaitlistNotEmpty),
-                promotion);
-        }
-
         var enrollment = new Enrollment
         {
             UserId = command.UserId,
