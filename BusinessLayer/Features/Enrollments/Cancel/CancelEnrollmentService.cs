@@ -90,11 +90,8 @@ public sealed class CancelEnrollmentService
         enrollment.RefundedVisits = refundedVisits;
         await _unitOfWork.SaveChangesAsync(ct);
 
-        var promotedUserIds = await PromoteAsync(scheduledClass, now, ct);
-        if (promotedUserIds.Count > 0)
-        {
-            await _unitOfWork.SaveChangesAsync(ct);
-        }
+        var promotedUserIds = await PromoteAsync(scheduledClass, enrollment.UserId, now, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
         var affectedUserIds = new List<long> { enrollment.UserId };
         affectedUserIds.AddRange(promotedUserIds);
         return CancelAttempt.Done(CancelEnrollmentResult.Succeeded(ToResponse(enrollment)), affectedUserIds);
@@ -112,9 +109,28 @@ public sealed class CancelEnrollmentService
         return enrollment.Seats;
     }
 
-    private async Task<IReadOnlyList<long>> PromoteAsync(Class scheduledClass, DateTime now, CancellationToken ct)
+    private async Task<IReadOnlyList<long>> PromoteAsync(
+        Class scheduledClass,
+        long cancellingUserId,
+        DateTime now,
+        CancellationToken ct)
     {
         if (scheduledClass.IsCancelled)
+        {
+            return [];
+        }
+
+        var waiting = await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct);
+        foreach (var entry in waiting)
+        {
+            if (entry.UserId == cancellingUserId)
+            {
+                entry.Status = WaitlistStatus.Cancelled;
+            }
+        }
+
+        var stillWaiting = waiting.Where(entry => entry.Status == WaitlistStatus.Waiting).ToList();
+        if (stillWaiting.Count == 0)
         {
             return [];
         }
@@ -126,14 +142,8 @@ public sealed class CancelEnrollmentService
             return [];
         }
 
-        var waiting = await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct);
-        if (waiting.Count == 0)
-        {
-            return [];
-        }
-
-        var passes = await LockPassesAsync(waiting, ct);
-        return await AssignAsync(scheduledClass, waiting, passes, freeSeats, now, ct);
+        var passes = await LockPassesAsync(stillWaiting, ct);
+        return await AssignAsync(scheduledClass, stillWaiting, passes, freeSeats, now, ct);
     }
 
     private async Task<Dictionary<long, Pass>> LockPassesAsync(IReadOnlyList<WaitlistEntry> waiting, CancellationToken ct)
