@@ -1,3 +1,4 @@
+using System.Buffers.Text;
 using System.Globalization;
 using System.Text;
 
@@ -49,28 +50,15 @@ public static class ScheduleContinuation
 
     private static string Encode(string payload)
     {
-        var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(payload));
-        return encoded.TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        return Base64Url.EncodeToString(Encoding.UTF8.GetBytes(payload));
     }
 
     private static bool TryDecode(string token, out string payload)
     {
         payload = string.Empty;
-        var padded = token.Replace('-', '+').Replace('_', '/');
-        var remainder = padded.Length % 4;
-        if (remainder == 1)
-        {
-            return false;
-        }
-
-        if (remainder > 0)
-        {
-            padded = padded.PadRight(padded.Length + (4 - remainder), '=');
-        }
-
         try
         {
-            payload = Encoding.UTF8.GetString(Convert.FromBase64String(padded));
+            payload = Encoding.UTF8.GetString(Base64Url.DecodeFromChars(token));
             return true;
         }
         catch (FormatException)
