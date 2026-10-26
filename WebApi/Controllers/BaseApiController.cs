@@ -10,15 +10,17 @@ public abstract class BaseApiController : ControllerBase
 
     protected bool IsAdmin => User.IsInRole(AdminRole);
 
-    protected bool TryGetCurrentUserId(out long userId)
+    protected long CurrentUserId
     {
-        var userIdValue = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (userIdValue is null || !long.TryParse(userIdValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out userId))
+        get
         {
-            userId = default;
-            return false;
-        }
+            var userIdValue = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (userIdValue is null)
+            {
+                throw new ArgumentNullException(nameof(userIdValue));
+            }
 
-        return true;
+            return long.Parse(userIdValue, CultureInfo.InvariantCulture);
+        }
     }
 }

@@ -55,14 +55,9 @@ public class EnrollmentsController : BaseApiController
             return ApiProblemsHelper.Create(StatusCodes.Status400BadRequest);
         }
 
-        if (!TryGetCurrentUserId(out var userId))
-        {
-            return Unauthorized();
-        }
-
         var command = new CreateEnrollmentCommand
         {
-            UserId = userId,
+            UserId = CurrentUserId,
             ClassId = request.ClassId,
             Seats = request.Seats,
             IdempotencyKey = idempotencyKey
@@ -82,14 +77,9 @@ public class EnrollmentsController : BaseApiController
             return ApiProblemsHelper.Create(StatusCodes.Status400BadRequest);
         }
 
-        if (!TryGetCurrentUserId(out var userId))
-        {
-            return Unauthorized();
-        }
-
         var command = new JoinWaitlistCommand
         {
-            UserId = userId,
+            UserId = CurrentUserId,
             ClassId = request.ClassId,
             Seats = request.Seats,
             IdempotencyKey = idempotencyKey
@@ -101,14 +91,9 @@ public class EnrollmentsController : BaseApiController
     [HttpPost("waitlist/{id}/cancel")]
     public async Task<IActionResult> LeaveWaitlist(long id, CancellationToken ct)
     {
-        if (!TryGetCurrentUserId(out var userId))
-        {
-            return Unauthorized();
-        }
-
         var command = new LeaveWaitlistCommand
         {
-            UserId = userId,
+            UserId = CurrentUserId,
             EntryId = id
         };
         var model = await _leaveWaitlistService.LeaveAsync(command, ct);
@@ -118,14 +103,9 @@ public class EnrollmentsController : BaseApiController
     [HttpPost("{id}/seats")]
     public async Task<IActionResult> ChangeSeats(long id, [FromBody] ChangeSeatsRequest request, CancellationToken ct)
     {
-        if (!TryGetCurrentUserId(out var userId))
-        {
-            return Unauthorized();
-        }
-
         var command = new ChangeSeatsCommand
         {
-            UserId = userId,
+            UserId = CurrentUserId,
             EnrollmentId = id,
             Seats = request.Seats
         };
@@ -136,14 +116,9 @@ public class EnrollmentsController : BaseApiController
     [HttpPost("{id}/cancel")]
     public async Task<IActionResult> Cancel(long id, CancellationToken ct)
     {
-        if (!TryGetCurrentUserId(out var userId))
-        {
-            return Unauthorized();
-        }
-
         var command = new CancelEnrollmentCommand
         {
-            UserId = userId,
+            UserId = CurrentUserId,
             EnrollmentId = id
         };
         var result = await _cancelEnrollmentService.CancelAsync(command, ct);
@@ -153,14 +128,9 @@ public class EnrollmentsController : BaseApiController
     [HttpGet("{id}")]
     public async Task<IActionResult> Get(long id, CancellationToken ct)
     {
-        if (!TryGetCurrentUserId(out var userId))
-        {
-            return Unauthorized();
-        }
-
         var query = new GetEnrollmentQuery
         {
-            UserId = userId,
+            UserId = CurrentUserId,
             EnrollmentId = id
         };
         var result = await _getEnrollmentService.GetAsync(query, ct);
