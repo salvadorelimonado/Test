@@ -20,6 +20,10 @@ public class IdempotencyRecordConfiguration : IEntityTypeConfiguration<Idempoten
             .WithMany()
             .HasForeignKey(x => x.UserId);
 
-        builder.HasIndex(x => new { x.UserId, x.Operation, x.KeyHash }).IsUnique();
+        builder.HasIndex(x => new { x.UserId, x.Operation, x.KeyHash })
+            .IsUnique()
+            .HasDatabaseName(IdempotencyRecord.KeyIndexName);
+
+        builder.HasIndex(x => x.CreatedAt);
     }
 }
