@@ -26,4 +26,55 @@ public class ClassRepository : GenericRepository<Class>, IClassRepository
             .ForUpdate()
             .FirstOrDefaultAsync(ct);
     }
+
+    public async Task<List<ClassScheduleRow>> ListScheduleAsync(
+        DateTime from,
+        DateTime to,
+        long? roomId,
+        long userId,
+        DateTime? cursorStartsAt,
+        long? cursorId,
+        int take,
+        CancellationToken ct = default)
+    {
+        var query = _dbSet
+            .AsNoTracking()
+            .Where(scheduledClass => !scheduledClass.IsCancelled
+                && scheduledClass.StartsAt >= from
+                && scheduledClass.StartsAt < to);
+
+        if (roomId is long selectedRoomId)
+        {
+            query = query.Where(scheduledClass => scheduledClass.RoomId == selectedRoomId);
+        }
+
+        if (cursorStartsAt is DateTime cursorStarts && cursorId is long cursorClassId)
+        {
+            query = query.Where(scheduledClass =>
+                scheduledClass.StartsAt > cursorStarts
+                || (scheduledClass.StartsAt == cursorStarts && scheduledClass.Id > cursorClassId));
+        }
+
+        return await query
+            .OrderBy(scheduledClass => scheduledClass.StartsAt)
+            .ThenBy(scheduledClass => scheduledClass.Id)
+            .Select(scheduledClass => new ClassScheduleRow
+            {
+                ClassId = scheduledClass.Id,
+                Title = scheduledClass.Title,
+                StartsAt = scheduledClass.StartsAt,
+                DurationMinutes = scheduledClass.DurationMinutes,
+                Capacity = scheduledClass.Capacity,
+                RoomId = scheduledClass.RoomId,
+                RoomName = scheduledClass.Room.Name,
+                TakenSeats = scheduledClass.Enrollments
+                    .Where(enrollment => enrollment.Status == EnrollmentStatus.Active)
+                    .Sum(enrollment => (int?)enrollment.Seats) ?? 0,
+                MySeats = scheduledClass.Enrollments
+                    .Where(enrollment => enrollment.Status == EnrollmentStatus.Active && enrollment.UserId == userId)
+                    .Sum(enrollment => (int?)enrollment.Seats) ?? 0
+            })
+            .Take(take)
+            .ToListAsync(ct);
+    }
 }
