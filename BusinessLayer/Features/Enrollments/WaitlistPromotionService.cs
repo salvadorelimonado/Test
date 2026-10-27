@@ -2,7 +2,7 @@ using DataAccessLayer.Entities;
 using DataAccessLayer.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 
-namespace BusinessLayer.Features.Enrollments.Waitlist;
+namespace BusinessLayer.Features.Enrollments;
 
 public sealed class WaitlistPromotionService
 {

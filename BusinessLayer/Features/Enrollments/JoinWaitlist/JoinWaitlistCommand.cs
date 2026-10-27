@@ -1,4 +1,4 @@
-namespace BusinessLayer.Features.Enrollments.Waitlist;
+namespace BusinessLayer.Features.Enrollments.JoinWaitlist;
 
 public sealed class JoinWaitlistCommand
 {

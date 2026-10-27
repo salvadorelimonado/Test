@@ -1,4 +1,4 @@
-namespace BusinessLayer.Features.Enrollments.Waitlist;
+namespace BusinessLayer.Features.Enrollments.LeaveWaitlist;
 
 public sealed class LeaveWaitlistCommand
 {

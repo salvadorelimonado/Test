@@ -1,6 +1,7 @@
 using BusinessLayer.Features.Enrollments.Cancel;
 using BusinessLayer.Features.Enrollments.Create;
-using BusinessLayer.Features.Enrollments.Waitlist;
+using BusinessLayer.Features.Enrollments.JoinWaitlist;
+using BusinessLayer.Features.Enrollments.LeaveWaitlist;
 using DataAccessLayer.Repositories;
 using WebApi.Features.Enrollments.Cancel;
 using WebApi.Features.Enrollments.Create;

@@ -1,4 +1,4 @@
-using BusinessLayer.Features.Enrollments.Waitlist;
+using BusinessLayer.Features.Enrollments;
 using DataAccessLayer;
 using DataAccessLayer.Entities;
 using DataAccessLayer.UnitOfWork;

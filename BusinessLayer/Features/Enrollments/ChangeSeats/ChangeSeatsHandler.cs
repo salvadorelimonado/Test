@@ -1,6 +1,5 @@
 using BusinessLayer.Extensions;
 using BusinessLayer.Features.Enrollments;
-using BusinessLayer.Features.Enrollments.Waitlist;
 using BusinessLayer.Result;
 using DataAccessLayer.Entities;
 using DataAccessLayer.Repositories;

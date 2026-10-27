@@ -4,7 +4,7 @@ using BusinessLayer.Result;
 using DataAccessLayer.Entities;
 using DataAccessLayer.UnitOfWork;
 
-namespace BusinessLayer.Features.Enrollments.Waitlist;
+namespace BusinessLayer.Features.Enrollments.LeaveWaitlist;
 
 public sealed class LeaveWaitlistHandler
 {

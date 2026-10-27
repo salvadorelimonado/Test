@@ -7,7 +7,7 @@ using DataAccessLayer.Entities;
 using DataAccessLayer.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 
-namespace BusinessLayer.Features.Enrollments.Waitlist;
+namespace BusinessLayer.Features.Enrollments.JoinWaitlist;
 
 public sealed class JoinWaitlistHandler
 {
