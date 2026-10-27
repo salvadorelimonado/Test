@@ -1,5 +1,5 @@
 using System.Net;
-using WebApi.Features.Analytics;
+using WebApi.Features.Analytics.GetLoad;
 using DataAccessLayer.Entities;
 using Shouldly;
 using WebApi.Tests.Infrastructure;

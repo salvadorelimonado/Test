@@ -1,6 +1,6 @@
 using System.Net;
 using Shouldly;
-using WebApi.Features.Schedule;
+using WebApi.Features.Schedule.GetSchedule;
 using WebApi.Tests.Infrastructure;
 
 namespace WebApi.Tests.Schedule;

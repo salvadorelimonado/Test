@@ -1,7 +1,7 @@
 using BusinessLayer.Features.Schedule;
 using Microsoft.AspNetCore.Mvc;
 
-namespace WebApi.Features.Schedule;
+namespace WebApi.Features.Schedule.GetSchedule;
 
 public sealed class GetScheduleRequest
 {

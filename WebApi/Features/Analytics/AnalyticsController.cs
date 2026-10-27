@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using BusinessLayer.Features.Analytics;
 using WebApi.Controllers;
+using WebApi.Features.Analytics.GetLoad;
 using WebApi.RateLimiting;
 
 namespace WebApi.Features.Analytics;

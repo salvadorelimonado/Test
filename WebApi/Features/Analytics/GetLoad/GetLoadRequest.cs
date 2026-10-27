@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 
-namespace WebApi.Features.Analytics;
+namespace WebApi.Features.Analytics.GetLoad;
 
 public sealed class GetLoadRequest
 {

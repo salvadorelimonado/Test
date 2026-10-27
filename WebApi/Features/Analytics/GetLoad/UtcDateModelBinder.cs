@@ -1,7 +1,7 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 
-namespace WebApi.Features.Analytics;
+namespace WebApi.Features.Analytics.GetLoad;
 
 public sealed class UtcDateModelBinder : IModelBinder
 {

@@ -1,6 +1,6 @@
 using DataAccessLayer.Repositories.Projections;
 
-namespace WebApi.Features.Analytics;
+namespace WebApi.Features.Analytics.GetLoad;
 
 public static class LoadMapper
 {

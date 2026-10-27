@@ -22,7 +22,7 @@ public static class ApiRateLimit
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
             options.OnRejected = (context, _) =>
             {
-                return new ValueTask(Results.Problem(
+                return new ValueTask(Microsoft.AspNetCore.Http.Results.Problem(
                     statusCode: StatusCodes.Status429TooManyRequests,
                     title: ReasonPhrases.GetReasonPhrase(StatusCodes.Status429TooManyRequests))
                     .ExecuteAsync(context.HttpContext));

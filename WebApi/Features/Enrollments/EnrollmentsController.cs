@@ -12,7 +12,7 @@ using WebApi.Controllers;
 using WebApi.Features.Enrollments.ChangeSeats;
 using WebApi.Features.Enrollments.Create;
 using WebApi.Features.Enrollments.Waitlist;
-using WebApi.Helpers;
+using WebApi.Results;
 using WebApi.RateLimiting;
 
 namespace WebApi.Features.Enrollments;

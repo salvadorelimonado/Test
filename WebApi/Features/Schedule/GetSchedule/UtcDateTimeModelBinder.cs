@@ -1,7 +1,7 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 
-namespace WebApi.Features.Schedule;
+namespace WebApi.Features.Schedule.GetSchedule;
 
 public sealed class UtcDateTimeModelBinder : IModelBinder
 {

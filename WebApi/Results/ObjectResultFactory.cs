@@ -1,9 +1,9 @@
 using BusinessLayer.Result;
 using Microsoft.AspNetCore.Mvc;
 
-namespace WebApi.Helpers;
+namespace WebApi.Results;
 
-public static class OperationResultMapper
+public static class ObjectResultFactory
 {
     public static IActionResult ToActionResult<T>(this OperationResult<T> result, int successStatusCode)
         where T : class

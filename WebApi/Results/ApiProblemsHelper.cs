@@ -2,7 +2,7 @@ using BusinessLayer.Result;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
 
-namespace WebApi.Helpers;
+namespace WebApi.Results;
 
 public static class ApiProblemsHelper
 {

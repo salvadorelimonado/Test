@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
-namespace DataAccessLayer.Database;
+namespace DataAccessLayer.Database.Exception;
 
 public static class UniqueConstraintViolation
 {

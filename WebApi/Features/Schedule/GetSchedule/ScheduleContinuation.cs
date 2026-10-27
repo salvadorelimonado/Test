@@ -2,7 +2,7 @@ using System.Buffers.Text;
 using System.Globalization;
 using System.Text;
 
-namespace WebApi.Features.Schedule;
+namespace WebApi.Features.Schedule.GetSchedule;
 
 public static class ScheduleContinuation
 {

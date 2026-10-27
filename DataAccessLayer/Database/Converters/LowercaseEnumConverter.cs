@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
-namespace DataAccessLayer.Database;
+namespace DataAccessLayer.Database.Converters;
 
 public static class LowercaseEnumConverter
 {

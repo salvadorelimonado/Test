@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using BusinessLayer.Features.Schedule;
 using WebApi.Controllers;
+using WebApi.Features.Schedule.GetSchedule;
 using WebApi.RateLimiting;
 
 namespace WebApi.Features.Schedule;

@@ -1,4 +1,4 @@
-namespace WebApi.Features.Schedule;
+namespace WebApi.Features.Schedule.GetSchedule;
 
 public sealed class SchedulePage
 {

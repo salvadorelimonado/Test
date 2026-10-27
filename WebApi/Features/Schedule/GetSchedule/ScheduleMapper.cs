@@ -1,6 +1,6 @@
 using BusinessLayer.Features.Schedule;
 
-namespace WebApi.Features.Schedule;
+namespace WebApi.Features.Schedule.GetSchedule;
 
 public static class ScheduleMapper
 {

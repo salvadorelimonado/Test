@@ -2,7 +2,7 @@ using System.Buffers.Text;
 using System.Globalization;
 using System.Text;
 using Shouldly;
-using WebApi.Features.Schedule;
+using WebApi.Features.Schedule.GetSchedule;
 
 namespace WebApi.Tests.Schedule;
 

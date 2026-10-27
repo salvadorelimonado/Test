@@ -1,5 +1,5 @@
 using Common.Database.Repositories.Generic;
-using DataAccessLayer.Database;
+using DataAccessLayer.Database.Converters;
 using DataAccessLayer.Entities;
 using DataAccessLayer.Repositories.Interfaces;
 using DataAccessLayer.Repositories.Projections;

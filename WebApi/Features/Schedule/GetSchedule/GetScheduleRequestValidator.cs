@@ -1,6 +1,6 @@
 using FluentValidation;
 
-namespace WebApi.Features.Schedule;
+namespace WebApi.Features.Schedule.GetSchedule;
 
 public sealed class GetScheduleRequestValidator : AbstractValidator<GetScheduleRequest>
 {
