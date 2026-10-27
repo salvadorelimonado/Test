@@ -4,13 +4,13 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using WebApi.Tests.Infrastructure;
+using WebApi.Tests.Infrastructure.Time;
 
 namespace WebApi.Tests;
 
 public class ApiApplicationFactory : WebApplicationFactory<Program>
 {
-    public AdjustableTimeProvider Clock { get; } = new();
+    public TestClock Clock { get; } = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {

@@ -1,5 +1,6 @@
 using Npgsql;
 using StackExchange.Redis;
+using WebApi.Tests.Infrastructure;
 
 namespace WebApi.Tests;
 
@@ -59,8 +60,8 @@ public static class TestDatabase
     [AssemblyCleanup]
     public static async Task CleanupAsync()
     {
-        Infrastructure.ClubTest.DisposeHosts();
-        Infrastructure.Club.Shutdown();
+        Infrastructure.HostTest.DisposeHosts();
+        TestSession.Shutdown();
 
         if (_databaseName == null)
         {
