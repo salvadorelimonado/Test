@@ -1,8 +1,9 @@
 using Common.Database.Repositories.Generic;
 using DataAccessLayer.Entities;
+using DataAccessLayer.Repositories.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
-namespace DataAccessLayer.Repositories;
+namespace DataAccessLayer.Repositories.Implementations;
 
 public class IdempotencyRepository : GenericRepository<IdempotencyRecord>, IIdempotencyRepository
 {

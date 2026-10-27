@@ -1,4 +1,4 @@
-using DataAccessLayer.Repositories;
+using DataAccessLayer.Repositories.Projections;
 
 namespace WebApi.Features.Analytics;
 

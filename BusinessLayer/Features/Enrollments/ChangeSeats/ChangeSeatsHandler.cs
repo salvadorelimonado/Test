@@ -2,7 +2,7 @@ using BusinessLayer.Extensions;
 using BusinessLayer.Features.Enrollments;
 using BusinessLayer.Result;
 using DataAccessLayer.Entities;
-using DataAccessLayer.Repositories;
+using DataAccessLayer.Repositories.Projections;
 using DataAccessLayer.UnitOfWork;
 
 namespace BusinessLayer.Features.Enrollments.ChangeSeats;

@@ -1,4 +1,4 @@
-namespace DataAccessLayer.Repositories;
+namespace DataAccessLayer.Repositories.Projections;
 
 public sealed class ClassScheduleRow
 {

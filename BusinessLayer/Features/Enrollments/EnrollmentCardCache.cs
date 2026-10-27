@@ -1,5 +1,5 @@
 using System.Globalization;
-using DataAccessLayer.Repositories;
+using DataAccessLayer.Repositories.Projections;
 using Microsoft.Extensions.Caching.Hybrid;
 
 namespace BusinessLayer.Features.Enrollments;

@@ -1,9 +1,11 @@
 using Common.Database.Repositories.Generic;
 using DataAccessLayer.Database;
 using DataAccessLayer.Entities;
+using DataAccessLayer.Repositories.Interfaces;
+using DataAccessLayer.Repositories.Projections;
 using Microsoft.EntityFrameworkCore;
 
-namespace DataAccessLayer.Repositories;
+namespace DataAccessLayer.Repositories.Implementations;
 
 public class WaitlistRepository : GenericRepository<WaitlistEntry>, IWaitlistRepository
 {

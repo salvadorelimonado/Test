@@ -1,4 +1,4 @@
-using DataAccessLayer.Repositories;
+using DataAccessLayer.Repositories.Projections;
 using DataAccessLayer.UnitOfWork;
 
 namespace BusinessLayer.Features.Analytics;

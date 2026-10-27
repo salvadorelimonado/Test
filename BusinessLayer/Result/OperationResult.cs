@@ -36,16 +36,12 @@ public abstract record OperationResult<T>
         where TResult : class
     {
         var result = this;
-        switch (result)
+        return result switch
         {
-            case Ok ok:
-                return new OperationResult<TResult>.Ok(map(ok.Value));
-            case NotFound:
-                return new OperationResult<TResult>.NotFound();
-            case Conflict conflict:
-                return new OperationResult<TResult>.Conflict(conflict.Reason, conflict.Details);
-            default:
-                throw new ArgumentOutOfRangeException(nameof(result), result, null);
-        }
+            Ok ok => new OperationResult<TResult>.Ok(map(ok.Value)),
+            NotFound => new OperationResult<TResult>.NotFound(),
+            Conflict conflict => new OperationResult<TResult>.Conflict(conflict.Reason, conflict.Details),
+            _ => throw new ArgumentOutOfRangeException(nameof(result), result, null)
+        };
     }
 }

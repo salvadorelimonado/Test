@@ -1,7 +1,8 @@
 using Common.Database.Repositories.Generic;
 using DataAccessLayer.Entities;
+using DataAccessLayer.Repositories.Projections;
 
-namespace DataAccessLayer.Repositories;
+namespace DataAccessLayer.Repositories.Interfaces;
 
 public interface IWaitlistRepository : IGenericRepository<WaitlistEntry>
 {

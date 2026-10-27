@@ -1,6 +1,7 @@
 using Common.Database.UnitOfWork;
 using DataAccessLayer.Entities;
-using DataAccessLayer.Repositories;
+using DataAccessLayer.Repositories.Implementations;
+using DataAccessLayer.Repositories.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
 namespace DataAccessLayer.UnitOfWork;
