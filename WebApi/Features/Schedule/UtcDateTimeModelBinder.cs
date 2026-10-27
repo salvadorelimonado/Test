@@ -1,18 +1,18 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
-using NodaTime;
-using NodaTime.Text;
 
 namespace WebApi.Features.Schedule;
 
 public sealed class UtcDateTimeModelBinder : IModelBinder
 {
-    private static readonly OffsetDateTimePattern OffsetDateTime = OffsetDateTimePattern.ExtendedIso;
-    private static readonly LocalDateTimePattern LocalDateTime = LocalDateTimePattern.ExtendedIso;
-    private static readonly OffsetDateTimePattern OffsetMinutes =
-        OffsetDateTimePattern.CreateWithInvariantCulture("uuuu'-'MM'-'dd'T'HH':'mmo<G>");
-    private static readonly LocalDateTimePattern LocalMinutes =
-        LocalDateTimePattern.CreateWithInvariantCulture("uuuu'-'MM'-'dd'T'HH':'mm");
-    private static readonly LocalDatePattern Date = LocalDatePattern.Iso;
+    private static readonly string[] Formats =
+    [
+        "yyyy-MM-dd'T'HH:mm:ss.FFFFFFFK",
+        "yyyy-MM-dd'T'HH:mmK",
+        "yyyy-MM-dd"
+    ];
+
+    private const DateTimeStyles Styles = DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal;
 
     public Task BindModelAsync(ModelBindingContext bindingContext)
     {
@@ -41,51 +41,13 @@ public sealed class UtcDateTimeModelBinder : IModelBinder
             return false;
         }
 
-        var offset = OffsetDateTime.Parse(text);
-        if (offset.Success)
+        // решение: дата без времени — полночь UTC, граница расписания совпадает с началом суток.
+        if (!DateTimeOffset.TryParseExact(text, Formats, CultureInfo.InvariantCulture, Styles, out var parsed))
         {
-            return TrySet(offset.Value.ToInstant(), out utc);
-        }
-
-        var local = LocalDateTime.Parse(text);
-        if (local.Success)
-        {
-            return TrySet(local.Value.WithOffset(Offset.Zero).ToInstant(), out utc);
-        }
-
-        var offsetMinutes = OffsetMinutes.Parse(text);
-        if (offsetMinutes.Success)
-        {
-            return TrySet(offsetMinutes.Value.ToInstant(), out utc);
-        }
-
-        var localMinutes = LocalMinutes.Parse(text);
-        if (localMinutes.Success)
-        {
-            return TrySet(localMinutes.Value.WithOffset(Offset.Zero).ToInstant(), out utc);
-        }
-
-        var date = Date.Parse(text);
-        if (date.Success)
-        {
-            // решение: дата без времени — полночь UTC, граница расписания совпадает с началом суток.
-            return TrySet(date.Value.AtMidnight().WithOffset(Offset.Zero).ToInstant(), out utc);
-        }
-
-        return false;
-    }
-
-    private static bool TrySet(Instant instant, out DateTime utc)
-    {
-        try
-        {
-            utc = instant.ToDateTimeUtc();
-            return true;
-        }
-        catch (ArgumentOutOfRangeException)
-        {
-            utc = default;
             return false;
         }
+
+        utc = parsed.UtcDateTime;
+        return true;
     }
 }
