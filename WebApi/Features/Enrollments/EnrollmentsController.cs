@@ -12,7 +12,7 @@ using WebApi.Controllers;
 using WebApi.Features.Enrollments.ChangeSeats;
 using WebApi.Features.Enrollments.Create;
 using WebApi.Features.Enrollments.Waitlist;
-using WebApi.Results;
+using WebApi.ActionResults;
 using WebApi.RateLimiting;
 
 namespace WebApi.Features.Enrollments;
@@ -54,12 +54,12 @@ public class EnrollmentsController : BaseApiController
     {
         if (request is null)
         {
-            return ApiProblemsHelper.Create(StatusCodes.Status400BadRequest);
+            return ProblemResultFactory.Create(StatusCodes.Status400BadRequest);
         }
 
         if (string.IsNullOrWhiteSpace(idempotencyKey))
         {
-            return ApiProblemsHelper.Create(StatusCodes.Status400BadRequest);
+            return ProblemResultFactory.Create(StatusCodes.Status400BadRequest);
         }
 
         var command = new CreateEnrollmentCommand
@@ -81,12 +81,12 @@ public class EnrollmentsController : BaseApiController
     {
         if (request is null)
         {
-            return ApiProblemsHelper.Create(StatusCodes.Status400BadRequest);
+            return ProblemResultFactory.Create(StatusCodes.Status400BadRequest);
         }
 
         if (string.IsNullOrWhiteSpace(idempotencyKey))
         {
-            return ApiProblemsHelper.Create(StatusCodes.Status400BadRequest);
+            return ProblemResultFactory.Create(StatusCodes.Status400BadRequest);
         }
 
         var command = new JoinWaitlistCommand
@@ -120,7 +120,7 @@ public class EnrollmentsController : BaseApiController
     {
         if (request is null)
         {
-            return ApiProblemsHelper.Create(StatusCodes.Status400BadRequest);
+            return ProblemResultFactory.Create(StatusCodes.Status400BadRequest);
         }
         var command = new ChangeSeatsCommand
         {

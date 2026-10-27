@@ -2,7 +2,7 @@ using BusinessLayer.Extensions;
 using BusinessLayer.Features.Enrollments;
 using BusinessLayer.Idempotency;
 using BusinessLayer.Result;
-using DataAccessLayer.Database.Exception;
+using DataAccessLayer.Database.Errors;
 using DataAccessLayer.Entities;
 using DataAccessLayer.UnitOfWork;
 using Microsoft.EntityFrameworkCore;

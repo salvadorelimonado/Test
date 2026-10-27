@@ -37,7 +37,10 @@ dotnet test
 ```
 
 Тестам нужны запущенные Postgres и Redis из `docker compose`. База для прогона создаётся
-отдельная и удаляется после.
+отдельная и удаляется после. Проект `BusinessLayer.Tests` инфраструктуру не требует.
+
+Принятые решения и собственные причины `409` — в [ЗАМЕТКИ.md](ЗАМЕТКИ.md).
+Это `idempotency-mismatch`, `already-promoted` (вместе с `promotedEnrollmentId`) и `exceeds-capacity`.
 
 ## Учётные данные
 

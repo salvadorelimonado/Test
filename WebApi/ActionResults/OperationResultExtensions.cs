@@ -1,9 +1,9 @@
 using BusinessLayer.Result;
 using Microsoft.AspNetCore.Mvc;
 
-namespace WebApi.Results;
+namespace WebApi.ActionResults;
 
-public static class ObjectResultFactory
+public static class OperationResultExtensions
 {
     public static IActionResult ToActionResult<T>(this OperationResult<T> result, int successStatusCode)
         where T : class
@@ -16,9 +16,9 @@ public static class ObjectResultFactory
                     StatusCode = successStatusCode
                 };
             case OperationResult<T>.NotFound:
-                return ApiProblemsHelper.Create(StatusCodes.Status404NotFound);
+                return ProblemResultFactory.Create(StatusCodes.Status404NotFound);
             case OperationResult<T>.Conflict conflict:
-                return ApiProblemsHelper.Create(StatusCodes.Status409Conflict, conflict.Reason, conflict.Details);
+                return ProblemResultFactory.Create(StatusCodes.Status409Conflict, conflict.Reason, conflict.Details);
             default:
                 throw new ArgumentOutOfRangeException(nameof(result), result, null);
         }

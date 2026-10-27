@@ -2,9 +2,9 @@ using BusinessLayer.Result;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
 
-namespace WebApi.Results;
+namespace WebApi.ActionResults;
 
-public static class ApiProblemsHelper
+public static class ProblemResultFactory
 {
     public static ObjectResult Create(
         int statusCode,
@@ -17,7 +17,7 @@ public static class ApiProblemsHelper
             Title = ReasonPhrases.GetReasonPhrase(statusCode)
         };
 
-        if (reason is ConflictReason value)
+        if (reason is { } value)
         {
             problem.Extensions["reason"] = value;
         }
