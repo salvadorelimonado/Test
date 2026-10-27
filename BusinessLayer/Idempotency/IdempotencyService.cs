@@ -37,11 +37,7 @@ public sealed class IdempotencyService
             throw new InvalidOperationException("An idempotency lock requires a transaction.");
         }
 
-        var keyHash = Hash(idempotencyKey);
-        var operationCode = (int)operation;
-        await _unitOfWork.DbContext.Database.ExecuteSqlAsync(
-            $"SELECT pg_advisory_xact_lock(hashtextextended({userId}::text || ':' || {operationCode}::text || ':' || encode({keyHash}, 'hex'), 0))",
-            cancellationToken);
+        await _unitOfWork.Idempotency.LockAsync(userId, operation, Hash(idempotencyKey), cancellationToken);
     }
 
     public async Task<OperationResult<TResponse>?> FindAsync<TResponse>(

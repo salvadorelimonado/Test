@@ -44,7 +44,7 @@ public class UnitOfWork : UnitOfWorkBase, IUnitOfWork
     public IPassRepository Pass => GetRepository<Pass, IPassRepository>(set => new PassRepository(set));
 
     public IIdempotencyRepository Idempotency =>
-        GetRepository<IdempotencyRecord, IIdempotencyRepository>(set => new IdempotencyRepository(set));
+        GetRepository<IdempotencyRecord, IIdempotencyRepository>(_ => new IdempotencyRepository(DbContext));
 
     public IWaitlistRepository Waitlist =>
         GetRepository<WaitlistEntry, IWaitlistRepository>(set => new WaitlistRepository(set));

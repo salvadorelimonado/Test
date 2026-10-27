@@ -10,4 +10,10 @@ public interface IIdempotencyRepository : IGenericRepository<IdempotencyRecord>
         IdempotencyOperation operation,
         byte[] keyHash,
         CancellationToken ct = default);
+
+    Task LockAsync(
+        long userId,
+        IdempotencyOperation operation,
+        byte[] keyHash,
+        CancellationToken ct = default);
 }
