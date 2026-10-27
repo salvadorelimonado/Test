@@ -153,7 +153,7 @@ public sealed class JoinWaitlistHandler
             return JoinAttempt.Stop(new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.ExceedsCapacity));
         }
 
-        var promotedUserIds = await _waitlistPromotion.PromoteAsync(scheduledClass, now, command.UserId, null, ct);
+        var promotedUserIds = await _waitlistPromotion.PromoteAsync(scheduledClass, now, command.UserId, null, null, ct);
         var takenSeats = await _unitOfWork.Enrollment.SumActiveSeatsAsync(command.ClassId, ct);
         var freeSeats = scheduledClass.Capacity - takenSeats;
         if (freeSeats >= command.Seats)

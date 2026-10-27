@@ -94,8 +94,6 @@ public sealed class CancelEnrollmentHandler
             return CancelAttempt.Done(new OperationResult<CancelledEnrollment>.Ok(ToResponse(enrollment)), enrollment.UserId);
         }
 
-        var waiting = await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct);
-        WaitlistPromotionService.CancelOwnRequest(waiting, enrollment.UserId);
         var refundedVisits = RefundedVisits(scheduledClass, enrollment, now);
         enrollment.Status = EnrollmentStatus.Cancelled;
         enrollment.CancelledAt = now;
@@ -107,6 +105,7 @@ public sealed class CancelEnrollmentHandler
             now,
             refundedVisits > 0 ? enrollment.UserId : null,
             null,
+            enrollment.UserId,
             ct);
         if (refundedVisits > 0)
         {

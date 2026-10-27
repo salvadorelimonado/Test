@@ -96,6 +96,7 @@ public sealed class ChangeSeatsHandler
                 now,
                 command.UserId,
                 command.UserId,
+                null,
                 ct);
             var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(command.UserId, ct);
             if (pass is null)
@@ -150,8 +151,6 @@ public sealed class ChangeSeatsHandler
         DateTime now,
         CancellationToken ct)
     {
-        var waiting = await _unitOfWork.Waitlist.ListWaitingForUpdateAsync(scheduledClass.Id, ct);
-        WaitlistPromotionService.CancelOwnRequest(waiting, enrollment.UserId);
         enrollment.Seats = seats;
         await _unitOfWork.SaveChangesAsync(ct);
         var promotedUserIds = await _waitlistPromotion.PromoteAsync(
@@ -159,6 +158,7 @@ public sealed class ChangeSeatsHandler
             now,
             enrollment.UserId,
             null,
+            enrollment.UserId,
             ct);
         var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(enrollment.UserId, ct);
         if (pass is null)

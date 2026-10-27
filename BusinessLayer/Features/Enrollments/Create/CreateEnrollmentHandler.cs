@@ -155,6 +155,7 @@ public sealed class CreateEnrollmentHandler
             now,
             command.UserId,
             command.UserId,
+            null,
             ct);
         var pass = await _unitOfWork.Pass.GetByUserForUpdateAsync(command.UserId, ct);
         if (pass is null)

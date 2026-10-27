@@ -1,5 +1,8 @@
 using BusinessLayer.Features.Enrollments.Waitlist;
+using DataAccessLayer;
 using DataAccessLayer.Entities;
+using DataAccessLayer.UnitOfWork;
+using Microsoft.EntityFrameworkCore;
 using Shouldly;
 
 namespace BusinessLayer.Tests;
@@ -102,7 +105,7 @@ public class WaitlistPromotionServiceTests
     }
 
     [TestMethod]
-    public void CancelOwnRequest_DropsOnlyThatUsersWaitingEntry()
+    public void MarkOwnRequestCancelled_DropsOnlyThatUsersWaitingEntry()
     {
         // Arrange
         var ownerUserId = 40L;
@@ -114,16 +117,16 @@ public class WaitlistPromotionServiceTests
         var next = Waiting(nextUserId, nextSeats, now.AddMinutes(-5));
 
         // Act
-        var stillWaiting = WaitlistPromotionService.CancelOwnRequest([own, next], ownerUserId);
+        var cancelled = WaitlistPromotionService.MarkOwnRequestCancelled([own, next], ownerUserId);
 
         // Assert
+        cancelled.ShouldBeTrue();
         own.Status.ShouldBe(WaitlistStatus.Cancelled);
         next.Status.ShouldBe(WaitlistStatus.Waiting);
-        stillWaiting.ShouldBe([next]);
     }
 
     [TestMethod]
-    public void ExceptOwnRequest_LeavesThatEntryWaiting()
+    public void OmitOwnRequest_LeavesThatEntryWaiting()
     {
         // Arrange
         var ownerUserId = 42L;
@@ -135,11 +138,29 @@ public class WaitlistPromotionServiceTests
         var next = Waiting(nextUserId, nextSeats, now.AddMinutes(-5));
 
         // Act
-        var others = WaitlistPromotionService.ExceptOwnRequest([own, next], ownerUserId);
+        var others = WaitlistPromotionService.OmitOwnRequest([own, next], ownerUserId);
 
         // Assert
         own.Status.ShouldBe(WaitlistStatus.Waiting);
         others.ShouldBe([next]);
+    }
+
+    [TestMethod]
+    public async Task Promote_WithoutATransaction_Throws()
+    {
+        // Arrange
+        var now = new DateTime(2032, 6, 1, 9, 0, 0, DateTimeKind.Utc);
+        var scheduledClass = new Class();
+        var unusedConnection = "Host=127.0.0.1;Port=1;Database=unused";
+        var options = new DbContextOptionsBuilder<ClubDbContext>().UseNpgsql(unusedConnection).Options;
+        await using var dbContext = new ClubDbContext(options);
+        var promotion = new WaitlistPromotionService(new UnitOfWork(dbContext));
+
+        // Act
+        var act = () => promotion.PromoteAsync(scheduledClass, now, null, null, null, CancellationToken.None);
+
+        // Assert
+        await Should.ThrowAsync<InvalidOperationException>(act);
     }
 
     private static WaitlistEntry Waiting(long userId, int seats, DateTime createdAt)

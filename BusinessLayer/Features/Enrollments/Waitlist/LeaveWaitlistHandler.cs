@@ -106,7 +106,7 @@ public sealed class LeaveWaitlistHandler
             return [];
         }
 
-        return await _waitlistPromotion.PromoteAsync(scheduledClass, now, null, null, ct);
+        return await _waitlistPromotion.PromoteAsync(scheduledClass, now, null, null, null, ct);
     }
 
     private static LeaveAttempt Done(LeftWaitlist response, IReadOnlyList<long> promotedUserIds)
