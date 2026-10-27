@@ -45,8 +45,6 @@ public sealed class JoinWaitlistHandler
             exception,
             IdempotencyRecord.KeyIndexName))
         {
-            // решение: advisory lock сериализует один и тот же ключ, поэтому эта ветка почти недостижима.
-            // Оставлена как страховка, если уникальный индекс всё же сработает.
             _unitOfWork.ClearChangeTracker();
             return await ReplayAsync(command, ct);
         }
@@ -158,7 +156,6 @@ public sealed class JoinWaitlistHandler
         var freeSeats = scheduledClass.Capacity - takenSeats;
         if (freeSeats >= command.Seats)
         {
-            // решение: в очередь встают только когда свободных мест меньше, чем запрошено.
             return JoinAttempt.Stop(new OperationResult<JoinedWaitlist>.Conflict(ConflictReason.SeatsAvailable));
         }
 

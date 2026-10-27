@@ -99,7 +99,6 @@ public sealed class CancelEnrollmentHandler
         enrollment.CancelledAt = now;
         enrollment.RefundedVisits = refundedVisits;
         await _unitOfWork.SaveChangesAsync(ct);
-        // решение: места освобождаем и очередь двигаем даже если до начала меньше двух часов и визиты не вернулись.
         var promotedUserIds = await _waitlistPromotion.PromoteAsync(
             scheduledClass,
             now,
@@ -126,7 +125,6 @@ public sealed class CancelEnrollmentHandler
 
     private static int RefundedVisits(Class scheduledClass, Enrollment enrollment, DateTime now)
     {
-        // решение: полный возврат, если до начала не меньше двух часов или занятие отменил клуб.
         var refundsFully = scheduledClass.IsCancelled || scheduledClass.StartsAt - now >= FullRefundLeadTime;
         if (!refundsFully)
         {

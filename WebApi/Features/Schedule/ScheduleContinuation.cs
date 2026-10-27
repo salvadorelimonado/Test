@@ -8,6 +8,7 @@ public static class ScheduleContinuation
 {
     public static string Write(DateTime startsAt, long classId)
     {
+        // решение: токен — позиция страницы без подписи и без привязки к фильтрам.
         var payload = string.Create(CultureInfo.InvariantCulture, $"{startsAt.Ticks}:{classId}");
         return Encode(payload);
     }

@@ -38,7 +38,6 @@ public static class ApiRateLimit
 
                 var redis = httpContext.RequestServices.GetRequiredService<IConnectionMultiplexer>();
                 // решение: при недоступном Redis лимитер отвечает ошибкой, а не пропускает запрос без ограничения.
-
                 return RedisRateLimitPartition.GetSlidingWindowRateLimiter(
                     userId,
                     _ => new RedisSlidingWindowRateLimiterOptions

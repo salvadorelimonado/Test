@@ -89,8 +89,7 @@ public sealed class ChangeSeatsHandler
         }
         else if (delta > 0)
         {
-            // решение: сначала догоняем очередь, потом проверяем абонемент и места уже после неё.
-            // Отказ откатывает продвижение: неудавшееся увеличение не сдвигает места и посещения.
+            // решение: чужую очередь догоняем до проверки абонемента и мест.
             var promoted = await _waitlistPromotion.PromoteAsync(
                 scheduledClass,
                 now,
@@ -166,7 +165,6 @@ public sealed class ChangeSeatsHandler
             throw new InvalidOperationException("Pass was not found.");
         }
 
-        // решение: уменьшение возвращает посещения в любой момент до начала, в том числе менее чем за два часа.
         pass.RemainingVisits -= delta;
         await _unitOfWork.SaveChangesAsync(ct);
         return promotedUserIds;

@@ -46,8 +46,6 @@ public sealed class CreateEnrollmentHandler
             exception,
             IdempotencyRecord.KeyIndexName))
         {
-            // решение: advisory lock сериализует один и тот же ключ, поэтому эта ветка почти недостижима.
-            // Оставлена как страховка, если уникальный индекс всё же сработает.
             _unitOfWork.ClearChangeTracker();
             var replayed = await ReplayAsync(command, ct);
             if (replayed is OperationResult<CreatedEnrollment>.Ok)
@@ -148,8 +146,7 @@ public sealed class CreateEnrollmentHandler
             return BookedEnrollment.Stop(new OperationResult<CreatedEnrollment>.Conflict(ConflictReason.ClassStarted));
         }
 
-        // решение: сначала догоняем очередь, потом проверяем абонемент и места уже после неё.
-        // Отказ откатывает продвижение: неудавшаяся запись не сдвигает места и посещения.
+        // решение: чужую очередь догоняем до проверки абонемента и мест.
         var promotedUserIds = await _waitlistPromotion.PromoteAsync(
             scheduledClass,
             now,

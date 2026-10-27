@@ -72,6 +72,7 @@ public sealed class LeaveWaitlistHandler
             case WaitlistStatus.Cancelled:
                 return Done(ToResponse(entry), []);
             case WaitlistStatus.Skipped:
+                // решение: контракт выхода знает только cancelled. Строку skipped не переписываем.
                 return Done(ToResponse(entry.Id, WaitlistStatus.Cancelled), []);
             case WaitlistStatus.Waiting:
                 entry.Status = WaitlistStatus.Cancelled;
