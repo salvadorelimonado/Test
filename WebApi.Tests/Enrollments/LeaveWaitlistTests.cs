@@ -12,30 +12,34 @@ namespace WebApi.Tests.Enrollments;
 [TestClass]
 public class LeaveWaitlistTests : ClubTest
 {
-    private const int SeatHolderNumber = 159;
-
     [TestMethod]
     public async Task Leave_RemovesTheEntryAndMovesTheQueueForward()
     {
         // Arrange
         var requestedSeats = 1;
+        var heldSeats = 1;
         var movedUpPosition = 2;
-        var validUntil = ClubTime.Today().AddDays(30);
+        var capacity = 1;
+        var leadDays = 40;
+        var passValidityDays = 30;
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
+        var holder = await Host().RegisterMember(heldSeats, validUntil);
+        var firstMember = await Host().RegisterMember(requestedSeats, validUntil);
+        var secondMember = await Host().RegisterMember(requestedSeats, validUntil);
+        var thirdMember = await Host().RegisterMember(requestedSeats, validUntil);
         var lesson = await Host().Lesson()
-            .Capacity(1)
-            .StartsAt(DateTime.UtcNow.AddDays(40))
-            .Pass(180, requestedSeats, validUntil)
-            .TakenBy(SeatHolderNumber, 1)
+            .Capacity(capacity)
+            .StartsAt(Host().Now.AddDays(leadDays))
+            .Pass(firstMember.Number, requestedSeats, validUntil)
+            .TakenBy(holder.Number, heldSeats)
             .Create();
-        await Host().SetPass(181, requestedSeats, validUntil);
-        await Host().SetPass(182, requestedSeats, validUntil);
-        var firstEntry = await Host().User(180).Join(lesson, requestedSeats);
-        var secondJoin = await Host().User(181).JoinWaitlist(lesson, requestedSeats);
+        var firstEntry = await firstMember.Join(lesson, requestedSeats);
+        var secondJoin = await secondMember.JoinWaitlist(lesson, requestedSeats);
         secondJoin.EnsureSuccessStatusCode();
 
         // Act
-        var response = await Host().User(180).LeaveWaitlist(firstEntry.Id);
-        var thirdJoin = await Host().User(182).JoinWaitlist(lesson, requestedSeats);
+        var response = await firstMember.LeaveWaitlist(firstEntry.Id);
+        var thirdJoin = await thirdMember.JoinWaitlist(lesson, requestedSeats);
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -53,20 +57,28 @@ public class LeaveWaitlistTests : ClubTest
     public async Task Leave_WhenTheEntryIsAlreadyCancelled_ReturnsTheSameResult()
     {
         // Arrange
+        var requestedSeats = 1;
+        var heldSeats = 1;
+        var visits = 3;
+        var capacity = 1;
+        var leadDays = 41;
+        var passValidityDays = 30;
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
+        var holder = await Host().RegisterMember(heldSeats, validUntil);
+        var member = await Host().RegisterMember(visits, validUntil);
         var lesson = await Host().Lesson()
-            .Capacity(1)
-            .StartsAt(DateTime.UtcNow.AddDays(41))
-            .Pass(183, 3)
-            .TakenBy(SeatHolderNumber, 1)
+            .Capacity(capacity)
+            .StartsAt(Host().Now.AddDays(leadDays))
+            .Pass(member.Number, visits, validUntil)
+            .TakenBy(holder.Number, heldSeats)
             .Create();
-        var entry = await Host().User(183).Join(lesson, 1);
-        var user = Host().User(183);
-        var first = await user.LeaveWaitlist(entry.Id);
+        var entry = await member.Join(lesson, requestedSeats);
+        var first = await member.LeaveWaitlist(entry.Id);
         first.EnsureSuccessStatusCode();
         var before = await Host().Waitlist(entry.Id);
 
         // Act
-        var second = await user.LeaveWaitlist(entry.Id);
+        var second = await member.LeaveWaitlist(entry.Id);
 
         // Assert
         second.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -86,20 +98,23 @@ public class LeaveWaitlistTests : ClubTest
         // Arrange
         var seats = 1;
         var visits = 2;
-        var validUntil = ClubTime.Today().AddDays(30);
+        var capacity = 1;
+        var leadDays = 44;
+        var queuedAgo = 5;
+        var passValidityDays = 30;
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
         var member = await Host().RegisterMember(visits, validUntil);
         var lesson = await Host().Lesson()
-            .Capacity(1)
-            .StartsAt(DateTime.UtcNow.AddDays(44))
+            .Capacity(capacity)
+            .StartsAt(Host().Now.AddDays(leadDays))
             .Pass(member.Number, visits, validUntil)
             .Create();
-        var entryId = await Host().AddWaiting(member.Number, lesson.ClassId, seats, DateTime.UtcNow.AddMinutes(-5));
+        var entryId = await Host().AddWaiting(member.Number, lesson.ClassId, seats, Host().Now.AddMinutes(-queuedAgo));
         await Host().SetWaitlistStatus(entryId, WaitlistStatus.Skipped);
-        var user = Host().User(member.Number);
 
         // Act
-        var response = await user.LeaveWaitlist(entryId);
-        var repeated = await user.LeaveWaitlist(entryId);
+        var response = await member.LeaveWaitlist(entryId);
+        var repeated = await member.LeaveWaitlist(entryId);
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -117,11 +132,13 @@ public class LeaveWaitlistTests : ClubTest
     public async Task Leave_WhenTheEntryIsMissing_ReturnsNotFound()
     {
         // Arrange
-        var user = Host().User(184);
+        var visits = 1;
+        var passValidityDays = 30;
+        var member = await Host().RegisterMember(visits, ClubTime.Today().AddDays(passValidityDays));
 
         // Act
-        var missing = await user.LeaveWaitlist(long.MaxValue);
-        var zero = await user.LeaveWaitlist(0);
+        var missing = await member.LeaveWaitlist(long.MaxValue);
+        var zero = await member.LeaveWaitlist(0);
 
         // Assert
         missing.StatusCode.ShouldBe(HttpStatusCode.NotFound);
@@ -132,16 +149,26 @@ public class LeaveWaitlistTests : ClubTest
     public async Task Leave_WhenTheEntryBelongsToAnotherUser_ReturnsNotFound()
     {
         // Arrange
+        var requestedSeats = 1;
+        var heldSeats = 1;
+        var visits = 3;
+        var capacity = 1;
+        var leadDays = 42;
+        var passValidityDays = 30;
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
+        var holder = await Host().RegisterMember(heldSeats, validUntil);
+        var owner = await Host().RegisterMember(visits, validUntil);
+        var other = await Host().RegisterMember(visits, validUntil);
         var lesson = await Host().Lesson()
-            .Capacity(1)
-            .StartsAt(DateTime.UtcNow.AddDays(42))
-            .Pass(186, 3)
-            .TakenBy(SeatHolderNumber, 1)
+            .Capacity(capacity)
+            .StartsAt(Host().Now.AddDays(leadDays))
+            .Pass(owner.Number, visits, validUntil)
+            .TakenBy(holder.Number, heldSeats)
             .Create();
-        var entry = await Host().User(186).Join(lesson, 1);
+        var entry = await owner.Join(lesson, requestedSeats);
 
         // Act
-        var response = await Host().User(185).LeaveWaitlist(entry.Id);
+        var response = await other.LeaveWaitlist(entry.Id);
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
@@ -152,17 +179,26 @@ public class LeaveWaitlistTests : ClubTest
     public async Task Leave_WhenTheEntryWasPromoted_ReturnsAlreadyPromoted()
     {
         // Arrange
+        var requestedSeats = 1;
+        var heldSeats = 1;
+        var visits = 3;
+        var capacity = 1;
+        var leadDays = 43;
+        var passValidityDays = 30;
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
+        var holder = await Host().RegisterMember(heldSeats, validUntil);
+        var member = await Host().RegisterMember(visits, validUntil);
         var lesson = await Host().Lesson()
-            .Capacity(1)
-            .StartsAt(DateTime.UtcNow.AddDays(43))
-            .Pass(187, 3)
-            .TakenBy(SeatHolderNumber, 1)
+            .Capacity(capacity)
+            .StartsAt(Host().Now.AddDays(leadDays))
+            .Pass(member.Number, visits, validUntil)
+            .TakenBy(holder.Number, heldSeats)
             .Create();
-        var entry = await Host().User(187).Join(lesson, 1);
+        var entry = await member.Join(lesson, requestedSeats);
         await Host().SetWaitlistStatus(entry.Id, WaitlistStatus.Promoted);
 
         // Act
-        var response = await Host().User(187).LeaveWaitlist(entry.Id);
+        var response = await member.LeaveWaitlist(entry.Id);
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
@@ -176,20 +212,24 @@ public class LeaveWaitlistTests : ClubTest
         // Arrange
         var seats = 1;
         var visits = 4;
-        var validUntil = ClubTime.Today().AddDays(30);
+        var capacity = 1;
+        var leadDays = 5;
+        var passValidityDays = 30;
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
+        var owner = await Host().RegisterMember(visits, validUntil);
+        var waiter = await Host().RegisterMember(visits, validUntil);
         var lesson = await Host().Lesson()
-            .Capacity(1)
-            .StartsAt(DateTime.UtcNow.AddDays(5))
-            .Pass(195, visits, validUntil)
+            .Capacity(capacity)
+            .StartsAt(Host().Now.AddDays(leadDays))
+            .Pass(owner.Number, visits, validUntil)
             .Create();
-        await Host().SetPass(194, visits, validUntil);
-        var booking = await Host().User(195).Book(lesson, seats);
-        var entry = await Host().User(194).Join(lesson, seats);
-        var cancel = await Host().User(195).CancelEnrollment(booking.Id);
+        var booking = await owner.Book(lesson, seats);
+        var entry = await waiter.Join(lesson, seats);
+        var cancel = await owner.CancelEnrollment(booking.Id);
         cancel.EnsureSuccessStatusCode();
 
         // Act
-        var response = await Host().User(194).LeaveWaitlist(entry.Id);
+        var response = await waiter.LeaveWaitlist(entry.Id);
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
@@ -197,7 +237,7 @@ public class LeaveWaitlistTests : ClubTest
         using var document = await JsonDocument.ParseAsync(stream);
         document.RootElement.GetProperty("reason").Deserialize<ConflictReason>(HttpReads.Json).ShouldBe(ConflictReason.AlreadyPromoted);
         var promotedEnrollmentId = document.RootElement.GetProperty("promotedEnrollmentId").GetInt64();
-        var cardResponse = await Host().User(194).GetEnrollment(promotedEnrollmentId);
+        var cardResponse = await waiter.GetEnrollment(promotedEnrollmentId);
         cardResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
         var card = await cardResponse.ReadBody<EnrollmentCard>();
         card.Id.ShouldBe(promotedEnrollmentId);
@@ -212,22 +252,31 @@ public class LeaveWaitlistTests : ClubTest
     {
         // Arrange
         var requestedSeats = 1;
+        var visits = 3;
+        var capacity = 4;
+        var alreadyStarted = 10;
+        var leadDays = 44;
+        var passValidityDays = 30;
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
+        var startedMember = await Host().RegisterMember(visits, validUntil);
+        var cancelledMember = await Host().RegisterMember(visits, validUntil);
         var started = await Host().Lesson()
-            .Capacity(4)
-            .StartsAt(DateTime.UtcNow.AddMinutes(-10))
-            .Pass(188, 3)
+            .Capacity(capacity)
+            .StartsAt(Host().Now.AddMinutes(-alreadyStarted))
+            .Pass(startedMember.Number, visits, validUntil)
             .Create();
         var cancelled = await Host().Lesson()
-            .Capacity(4)
-            .StartsAt(DateTime.UtcNow.AddDays(44))
+            .Capacity(capacity)
+            .StartsAt(Host().Now.AddDays(leadDays))
             .Cancelled()
-            .Pass(189, 3)
+            .Pass(cancelledMember.Number, visits, validUntil)
             .Create();
-        var startedEntryId = await Host().AddWaiting(188, started.ClassId, requestedSeats, DateTime.UtcNow);
-        var cancelledEntryId = await Host().AddWaiting(189, cancelled.ClassId, requestedSeats, DateTime.UtcNow);
+        var startedEntryId = await Host().AddWaiting(startedMember.Number, started.ClassId, requestedSeats, Host().Now);
+        var cancelledEntryId = await Host().AddWaiting(cancelledMember.Number, cancelled.ClassId, requestedSeats, Host().Now);
+
         // Act
-        var startedResponse = await Host().User(188).LeaveWaitlist(startedEntryId);
-        var cancelledResponse = await Host().User(189).LeaveWaitlist(cancelledEntryId);
+        var startedResponse = await startedMember.LeaveWaitlist(startedEntryId);
+        var cancelledResponse = await cancelledMember.LeaveWaitlist(cancelledEntryId);
 
         // Assert
         startedResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -245,25 +294,30 @@ public class LeaveWaitlistTests : ClubTest
     {
         // Arrange
         var seats = 1;
-        var validUntil = ClubTime.Today().AddDays(30);
+        var visits = 4;
+        var capacity = 1;
+        var leadDays = 4;
+        var passValidityDays = 30;
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
+        var owner = await Host().RegisterMember(visits, validUntil);
+        var waiter = await Host().RegisterMember(visits, validUntil);
         var booked = await Host().Lesson()
-            .Capacity(1)
-            .StartsAt(DateTime.UtcNow.AddDays(4))
-            .Pass(192, 4, validUntil)
+            .Capacity(capacity)
+            .StartsAt(Host().Now.AddDays(leadDays))
+            .Pass(owner.Number, visits, validUntil)
             .Create();
-        await Host().SetPass(191, 4, validUntil);
-        var enrollmentId = await Host().AddEnrollment(192, booked.ClassId, seats, EnrollmentStatus.Active);
-        var entry = await Host().User(191).Join(booked, seats);
-        var left = await Host().User(191).LeaveWaitlist(entry.Id);
+        var enrollmentId = await Host().AddEnrollment(owner.Number, booked.ClassId, seats, EnrollmentStatus.Active);
+        var entry = await waiter.Join(booked, seats);
+        var left = await waiter.LeaveWaitlist(entry.Id);
         left.EnsureSuccessStatusCode();
 
         // Act
-        var cancel = await Host().User(192).CancelEnrollment(enrollmentId);
+        var cancel = await owner.CancelEnrollment(enrollmentId);
 
         // Assert
         cancel.StatusCode.ShouldBe(HttpStatusCode.OK);
         (await Host().ActiveCount(booked.UserId, booked.ClassId)).ShouldBe(0);
-        (await Host().ActiveCount(await Host().UserId(191), booked.ClassId)).ShouldBe(0);
+        (await Host().ActiveCount(await Host().UserId(waiter.Number), booked.ClassId)).ShouldBe(0);
         (await Host().WaitlistStatusOf(entry.Id)).ShouldBe(WaitlistStatus.Cancelled);
         (await Host().SumActiveSeats(booked.ClassId)).ShouldBe(0);
     }
@@ -282,10 +336,12 @@ public class LeaveWaitlistTests : ClubTest
     public async Task Leave_WhenTheMinuteLimitIsExceeded_ReturnsTooManyRequests()
     {
         // Arrange
-        var user = Host().User(190);
+        var visits = 1;
+        var passValidityDays = 30;
+        var member = await Host().RegisterMember(visits, ClubTime.Today().AddDays(passValidityDays));
 
         // Act
-        var lastStatus = await user.Hammer(_ => user.LeaveWaitlist(0));
+        var lastStatus = await member.Hammer(_ => member.LeaveWaitlist(0));
 
         // Assert
         lastStatus.ShouldBe(HttpStatusCode.TooManyRequests);
@@ -295,10 +351,12 @@ public class LeaveWaitlistTests : ClubTest
     public async Task Leave_WhenTheIdIsNotNumeric_ReturnsBadRequest()
     {
         // Arrange
-        var user = Host().User(193);
+        var visits = 1;
+        var passValidityDays = 30;
+        var member = await Host().RegisterMember(visits, ClubTime.Today().AddDays(passValidityDays));
 
         // Act
-        var response = await user.LeaveWaitlist("abc");
+        var response = await member.LeaveWaitlist("abc");
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);

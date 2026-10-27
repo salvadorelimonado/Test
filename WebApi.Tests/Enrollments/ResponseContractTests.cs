@@ -13,13 +13,15 @@ public class ResponseContractTests : ClubTest
         // Arrange
         var seats = 2;
         var visits = 6;
-        var validUntil = ClubTime.Today().AddDays(40);
+        var capacity = 6;
+        var passValidityDays = 40;
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
         var startsAt = new DateTime(2035, 2, 2, 11, 0, 0, DateTimeKind.Utc);
         var member = await Host().RegisterMember(visits, validUntil);
-        var lesson = await Host().Lesson().Capacity(6).StartsAt(startsAt).Pass(member.Number, visits, validUntil).Create();
+        var lesson = await Host().Lesson().Capacity(capacity).StartsAt(startsAt).Pass(member.Number, visits, validUntil).Create();
 
         // Act
-        var response = await Host().User(member.Number).Enroll(lesson, seats);
+        var response = await member.Enroll(lesson, seats);
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.Created);
@@ -37,14 +39,15 @@ public class ResponseContractTests : ClubTest
         // Arrange
         var seats = 1;
         var visits = 5;
+        var capacity = 6;
         var validUntil = new DateOnly(2035, 3, 1);
         var startsAt = new DateTime(2035, 2, 3, 11, 0, 0, DateTimeKind.Utc);
         var member = await Host().RegisterMember(visits, validUntil);
-        var lesson = await Host().Lesson().Capacity(6).StartsAt(startsAt).Pass(member.Number, visits, validUntil).Create();
-        var created = await Host().User(member.Number).Book(lesson, seats);
+        var lesson = await Host().Lesson().Capacity(capacity).StartsAt(startsAt).Pass(member.Number, visits, validUntil).Create();
+        var created = await member.Book(lesson, seats);
 
         // Act
-        var response = await Host().User(member.Number).GetEnrollment(created.Id);
+        var response = await member.GetEnrollment(created.Id);
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -65,17 +68,20 @@ public class ResponseContractTests : ClubTest
         // Arrange
         var seats = 1;
         var visits = 4;
-        var validUntil = ClubTime.Today().AddDays(20);
+        var capacity = 4;
+        var leadDays = 12;
+        var passValidityDays = 20;
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
         var member = await Host().RegisterMember(visits, validUntil);
         var lesson = await Host().Lesson()
-            .Capacity(4)
-            .StartsAt(DateTime.UtcNow.AddDays(12))
+            .Capacity(capacity)
+            .StartsAt(Host().Now.AddDays(leadDays))
             .Pass(member.Number, visits, validUntil)
             .Create();
-        var created = await Host().User(member.Number).Book(lesson, seats);
+        var created = await member.Book(lesson, seats);
 
         // Act
-        var response = await Host().User(member.Number).CancelEnrollment(created.Id);
+        var response = await member.CancelEnrollment(created.Id);
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -92,18 +98,21 @@ public class ResponseContractTests : ClubTest
         // Arrange
         var seats = 1;
         var visits = 4;
-        var validUntil = ClubTime.Today().AddDays(20);
+        var capacity = 1;
+        var leadDays = 13;
+        var passValidityDays = 20;
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
         var holder = await Host().RegisterMember(visits, validUntil);
         var member = await Host().RegisterMember(visits, validUntil);
         var lesson = await Host().Lesson()
-            .Capacity(1)
-            .StartsAt(DateTime.UtcNow.AddDays(13))
+            .Capacity(capacity)
+            .StartsAt(Host().Now.AddDays(leadDays))
             .Pass(holder.Number, visits, validUntil)
             .Create();
-        await Host().User(holder.Number).Book(lesson, seats);
+        await holder.Book(lesson, seats);
 
         // Act
-        var response = await Host().User(member.Number).Enroll(lesson, seats);
+        var response = await member.Enroll(lesson, seats);
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
@@ -116,21 +125,24 @@ public class ResponseContractTests : ClubTest
         // Arrange
         var seats = 1;
         var visits = 4;
-        var validUntil = ClubTime.Today().AddDays(20);
+        var capacity = 1;
+        var leadDays = 14;
+        var passValidityDays = 20;
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
         var holder = await Host().RegisterMember(visits, validUntil);
         var member = await Host().RegisterMember(visits, validUntil);
         var lesson = await Host().Lesson()
-            .Capacity(1)
-            .StartsAt(DateTime.UtcNow.AddDays(14))
+            .Capacity(capacity)
+            .StartsAt(Host().Now.AddDays(leadDays))
             .Pass(holder.Number, visits, validUntil)
             .TakenBy(holder.Number, seats)
             .Create();
 
         // Act
-        var joined = await Host().User(member.Number).JoinWaitlist(lesson, seats);
+        var joined = await member.JoinWaitlist(lesson, seats);
         var joinedBody = await joined.ReadJson();
         var entryId = joinedBody.GetProperty("id").GetInt64();
-        var left = await Host().User(member.Number).LeaveWaitlist(entryId);
+        var left = await member.LeaveWaitlist(entryId);
 
         // Assert
         joined.StatusCode.ShouldBe(HttpStatusCode.Created);
@@ -150,16 +162,19 @@ public class ResponseContractTests : ClubTest
         var startsAt = new DateTime(2035, 8, 8, 9, 0, 0, DateTimeKind.Utc);
         var day = DateOnly.FromDateTime(startsAt);
         var visits = 4;
+        var capacity = 6;
+        var beforeStart = TimeSpan.FromHours(1);
+        var afterStart = TimeSpan.FromHours(2);
         var validUntil = new DateOnly(2035, 9, 1);
         var member = await Host().RegisterMember(visits, validUntil);
         var lesson = await Host().Lesson()
-            .Capacity(6)
+            .Capacity(capacity)
             .StartsAt(startsAt)
             .Pass(member.Number, visits, validUntil)
             .Create();
 
         // Act
-        var schedule = await Host().User(member.Number).Schedule(startsAt.AddHours(-1), startsAt.AddHours(2), roomId: lesson.RoomId);
+        var schedule = await member.Schedule(startsAt - beforeStart, startsAt + afterStart, roomId: lesson.RoomId);
         var load = await Host().Admin(1).Load(day, day, lesson.RoomId);
 
         // Assert

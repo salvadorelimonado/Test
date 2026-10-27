@@ -20,17 +20,22 @@ public class GetScheduleTests : ClubTest
         var otherSeats = 3;
         var capacity = 10;
         var visits = 10;
-        var validUntil = ClubTime.Today().AddDays(30);
-        var rooms = await Host().Rooms(2);
-        var first = await Host().Lesson().Capacity(capacity).StartsAt(Anchor).Room(rooms[0].Id).Pass(100, visits, validUntil).Create();
-        await Host().SetPass(101, visits, validUntil);
-        var second = await Host().Lesson().Capacity(capacity).StartsAt(Anchor.AddHours(2)).Room(rooms[0].Id).Pass(100, visits, validUntil).Create();
-        await Host().User(100).Book(first, firstSeats);
-        await Host().User(100).Book(first, secondSeats);
-        await Host().User(101).Book(first, otherSeats);
+        var passValidityDays = 30;
+        var roomCount = 2;
+        var hoursUntilSecondClass = 2;
+        var windowHours = 3;
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
+        var member = await Host().RegisterMember(visits, validUntil);
+        var other = await Host().RegisterMember(visits, validUntil);
+        var rooms = await Host().Rooms(roomCount);
+        var first = await Host().Lesson().Capacity(capacity).StartsAt(Anchor).Room(rooms[0].Id).Pass(member.Number, visits, validUntil).Create();
+        var second = await Host().Lesson().Capacity(capacity).StartsAt(Anchor.AddHours(hoursUntilSecondClass)).Room(rooms[0].Id).Pass(member.Number, visits, validUntil).Create();
+        await member.Book(first, firstSeats);
+        await member.Book(first, secondSeats);
+        await other.Book(first, otherSeats);
 
         // Act
-        var response = await Host().User(100).Schedule(Anchor, Anchor.AddHours(3));
+        var response = await member.Schedule(Anchor, Anchor.AddHours(windowHours));
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -55,13 +60,20 @@ public class GetScheduleTests : ClubTest
     public async Task Get_WhenFromHasNoOffset_TreatsItAsUtc()
     {
         // Arrange
-        var startsAt = Anchor.AddDays(1);
-        var lesson = await Host().Lesson().Capacity(8).StartsAt(startsAt).Pass(102, 4).Create();
+        var daysUntilClass = 1;
+        var windowHours = 1;
+        var capacity = 8;
+        var visits = 4;
+        var passValidityDays = 30;
+        var startsAt = Anchor.AddDays(daysUntilClass);
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
+        var member = await Host().RegisterMember(visits, validUntil);
+        var lesson = await Host().Lesson().Capacity(capacity).StartsAt(startsAt).Pass(member.Number, visits, validUntil).Create();
 
         // Act
-        var response = await Host().User(102).Schedule(
+        var response = await member.Schedule(
             startsAt.ToString("yyyy-MM-ddTHH:mm:ss"),
-            startsAt.AddHours(1).ToString("yyyy-MM-ddTHH:mm:ss"));
+            startsAt.AddHours(windowHours).ToString("yyyy-MM-ddTHH:mm:ss"));
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -74,13 +86,18 @@ public class GetScheduleTests : ClubTest
     public async Task Get_WhenBoundsAreInvalid_ReturnsBadRequest()
     {
         // Arrange
-        var from = Anchor.AddDays(2);
-        var user = Host().User(103);
+        var daysUntilWindow = 2;
+        var windowHours = 1;
+        var visits = 4;
+        var passValidityDays = 30;
+        var from = Anchor.AddDays(daysUntilWindow);
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
+        var member = await Host().RegisterMember(visits, validUntil);
 
         // Act
-        var missingFrom = await user.Schedule(null, from.ToString("yyyy-MM-ddTHH:mm:ss"));
-        var equalBounds = await user.Schedule(from, from);
-        var unitedStatesDate = await user.Schedule("10/22/2026 10:00", from.AddHours(1).ToString("yyyy-MM-ddTHH:mm:ss"));
+        var missingFrom = await member.Schedule(null, from.ToString("yyyy-MM-ddTHH:mm:ss"));
+        var equalBounds = await member.Schedule(from, from);
+        var unitedStatesDate = await member.Schedule("10/22/2026 10:00", from.AddHours(windowHours).ToString("yyyy-MM-ddTHH:mm:ss"));
 
         // Assert
         missingFrom.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
@@ -92,14 +109,21 @@ public class GetScheduleTests : ClubTest
     public async Task Get_WhenLimitOrTokenIsInvalid_ReturnsBadRequest()
     {
         // Arrange
-        var from = Anchor.AddDays(3);
-        var to = from.AddHours(1);
-        var user = Host().User(104);
+        var daysUntilWindow = 3;
+        var windowHours = 1;
+        var visits = 4;
+        var passValidityDays = 30;
+        var belowMinimumPageSize = SchedulePaginationLimits.MinPageSize - 1;
+        var aboveMaximumPageSize = SchedulePaginationLimits.MaxPageSize + 1;
+        var from = Anchor.AddDays(daysUntilWindow);
+        var to = from.AddHours(windowHours);
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
+        var member = await Host().RegisterMember(visits, validUntil);
 
         // Act
-        var smallLimit = await user.Schedule(from, to, SchedulePaginationLimits.MinPageSize - 1);
-        var largeLimit = await user.Schedule(from, to, SchedulePaginationLimits.MaxPageSize + 1);
-        var badToken = await user.Schedule(from, to, SchedulePaginationLimits.DefaultPageSize, continuation: "not-a-token");
+        var smallLimit = await member.Schedule(from, to, belowMinimumPageSize);
+        var largeLimit = await member.Schedule(from, to, aboveMaximumPageSize);
+        var badToken = await member.Schedule(from, to, SchedulePaginationLimits.DefaultPageSize, continuation: "not-a-token");
 
         // Assert
         smallLimit.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
@@ -112,11 +136,20 @@ public class GetScheduleTests : ClubTest
     {
         // Arrange
         var day = new DateTime(2099, 3, 11, 0, 0, 0, DateTimeKind.Utc);
-        var inside = await Host().Lesson().Capacity(8).StartsAt(day.AddHours(23).AddMinutes(30)).Pass(111, 4).Create();
-        await Host().Lesson().Capacity(8).StartsAt(day.AddDays(1)).Pass(111, 4).Create();
+        var eveningHour = 23;
+        var eveningMinute = 30;
+        var nextDay = 1;
+        var capacity = 8;
+        var visits = 4;
+        var passValidityDays = 30;
+        var nextMidnight = day.AddDays(nextDay);
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
+        var member = await Host().RegisterMember(visits, validUntil);
+        var inside = await Host().Lesson().Capacity(capacity).StartsAt(day.AddHours(eveningHour).AddMinutes(eveningMinute)).Pass(member.Number, visits, validUntil).Create();
+        await Host().Lesson().Capacity(capacity).StartsAt(nextMidnight).Pass(member.Number, visits, validUntil).Create();
 
         // Act
-        var response = await Host().User(111).Schedule("2099-03-11", "2099-03-12");
+        var response = await member.Schedule(day.ToString("yyyy-MM-dd"), nextMidnight.ToString("yyyy-MM-dd"));
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -130,10 +163,15 @@ public class GetScheduleTests : ClubTest
     {
         // Arrange
         var startsAt = new DateTime(2099, 3, 13, 10, 0, 0, DateTimeKind.Utc);
-        var lesson = await Host().Lesson().Capacity(8).StartsAt(startsAt).Pass(112, 4).Create();
+        var capacity = 8;
+        var visits = 4;
+        var passValidityDays = 30;
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
+        var member = await Host().RegisterMember(visits, validUntil);
+        var lesson = await Host().Lesson().Capacity(capacity).StartsAt(startsAt).Pass(member.Number, visits, validUntil).Create();
 
         // Act
-        var response = await Host().User(112).Schedule("2099-03-13T12:30:00+03:00", "2099-03-13T14:00:00+03:00");
+        var response = await member.Schedule("2099-03-13T12:30:00+03:00", "2099-03-13T14:00:00+03:00");
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -148,11 +186,12 @@ public class GetScheduleTests : ClubTest
     {
         // Arrange
         var startsAt = new DateTime(2099, 4, 8, 10, 0, 0, DateTimeKind.Utc);
+        var capacity = 8;
         var visits = 4;
-        var validUntil = ClubTime.Today().AddDays(30);
+        var passValidityDays = 30;
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
         var member = await Host().RegisterMember(visits, validUntil);
-        var lesson = await Host().Lesson().Capacity(8).StartsAt(startsAt).Pass(member.Number, visits, validUntil).Create();
-        var user = Host().User(member.Number);
+        var lesson = await Host().Lesson().Capacity(capacity).StartsAt(startsAt).Pass(member.Number, visits, validUntil).Create();
         var atTheStart = "2099-04-08T10:00:00.000Z";
         var fraction = "2099-04-08T10:00:00.1234567Z";
         var oneSecondLater = "2099-04-08T10:00:01Z";
@@ -160,9 +199,9 @@ public class GetScheduleTests : ClubTest
         var nextMinute = "2099-04-08T10:01Z";
 
         // Act
-        var throughTheFraction = await user.Schedule(atTheStart, fraction);
-        var afterTheFraction = await user.Schedule(fraction, oneSecondLater);
-        var wholeMinute = await user.Schedule(minute, nextMinute);
+        var throughTheFraction = await member.Schedule(atTheStart, fraction);
+        var afterTheFraction = await member.Schedule(fraction, oneSecondLater);
+        var wholeMinute = await member.Schedule(minute, nextMinute);
 
         // Assert
         throughTheFraction.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -182,20 +221,29 @@ public class GetScheduleTests : ClubTest
     public async Task Get_PagesByStartThenIdAndUsesTheDefaultLimit()
     {
         // Arrange
-        var sharedStartsAt = Anchor.AddDays(4);
-        var laterStartsAt = sharedStartsAt.AddHours(2);
-        var rooms = await Host().Rooms(1);
-        var first = await Host().Lesson().Capacity(6).StartsAt(sharedStartsAt).Room(rooms[0].Id).Pass(105, 4).Create();
-        var second = await Host().Lesson().Capacity(6).StartsAt(sharedStartsAt).Room(rooms[0].Id).Pass(105, 4).Create();
-        var third = await Host().Lesson().Capacity(6).StartsAt(laterStartsAt).Room(rooms[0].Id).Pass(105, 4).Create();
-        var user = Host().User(105);
+        var daysUntilClasses = 4;
+        var hoursUntilLaterClass = 2;
+        var windowHours = 1;
+        var roomCount = 1;
+        var capacity = 6;
+        var visits = 4;
+        var passValidityDays = 30;
+        var sharedStartsAt = Anchor.AddDays(daysUntilClasses);
+        var laterStartsAt = sharedStartsAt.AddHours(hoursUntilLaterClass);
+        var to = laterStartsAt.AddHours(windowHours);
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
+        var rooms = await Host().Rooms(roomCount);
+        var member = await Host().RegisterMember(visits, validUntil);
+        var first = await Host().Lesson().Capacity(capacity).StartsAt(sharedStartsAt).Room(rooms[0].Id).Pass(member.Number, visits, validUntil).Create();
+        var second = await Host().Lesson().Capacity(capacity).StartsAt(sharedStartsAt).Room(rooms[0].Id).Pass(member.Number, visits, validUntil).Create();
+        var third = await Host().Lesson().Capacity(capacity).StartsAt(laterStartsAt).Room(rooms[0].Id).Pass(member.Number, visits, validUntil).Create();
 
         // Act
-        var firstPage = await user.Schedule(sharedStartsAt, laterStartsAt.AddHours(1), SchedulePaginationLimits.MinPageSize);
+        var firstPage = await member.Schedule(sharedStartsAt, to, SchedulePaginationLimits.MinPageSize);
         var firstBody = await firstPage.ReadBody<SchedulePage>();
-        var secondPage = await user.Schedule(sharedStartsAt, laterStartsAt.AddHours(1), SchedulePaginationLimits.MinPageSize, continuation: firstBody.ContinuationToken);
+        var secondPage = await member.Schedule(sharedStartsAt, to, SchedulePaginationLimits.MinPageSize, continuation: firstBody.ContinuationToken);
         var secondBody = await secondPage.ReadBody<SchedulePage>();
-        var thirdPage = await user.Schedule(sharedStartsAt, laterStartsAt.AddHours(1), SchedulePaginationLimits.MinPageSize, continuation: secondBody.ContinuationToken);
+        var thirdPage = await member.Schedule(sharedStartsAt, to, SchedulePaginationLimits.MinPageSize, continuation: secondBody.ContinuationToken);
 
         // Assert
         firstPage.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -216,15 +264,23 @@ public class GetScheduleTests : ClubTest
     {
         // Arrange
         var classCount = SchedulePaginationLimits.DefaultPageSize + 1;
-        var startsAt = Anchor.AddDays(5);
-        var rooms = await Host().Rooms(1);
+        var daysUntilClasses = 5;
+        var nextDay = 1;
+        var roomCount = 1;
+        var capacity = 6;
+        var visits = 4;
+        var passValidityDays = 30;
+        var startsAt = Anchor.AddDays(daysUntilClasses);
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
+        var rooms = await Host().Rooms(roomCount);
+        var member = await Host().RegisterMember(visits, validUntil);
         for (var index = 0; index < classCount; index++)
         {
-            await Host().Lesson().Capacity(6).StartsAt(startsAt.AddMinutes(index)).Room(rooms[0].Id).Pass(106, 4).Create();
+            await Host().Lesson().Capacity(capacity).StartsAt(startsAt.AddMinutes(index)).Room(rooms[0].Id).Pass(member.Number, visits, validUntil).Create();
         }
 
         // Act
-        var response = await Host().User(106).Schedule(startsAt, startsAt.AddDays(1));
+        var response = await member.Schedule(startsAt, startsAt.AddDays(nextDay));
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -237,13 +293,21 @@ public class GetScheduleTests : ClubTest
     public async Task Get_ExcludesCancelledClassesAndTheExclusiveEnd()
     {
         // Arrange
-        var from = Anchor.AddDays(6);
-        var included = await Host().Lesson().Capacity(8).StartsAt(from).Pass(107, 4).Create();
-        await Host().Lesson().Capacity(8).StartsAt(from.AddHours(1)).Cancelled().Pass(107, 4).Create();
-        await Host().Lesson().Capacity(8).StartsAt(from.AddHours(2)).Pass(107, 4).Create();
+        var daysUntilWindow = 6;
+        var oneHour = 1;
+        var twoHours = 2;
+        var capacity = 8;
+        var visits = 4;
+        var passValidityDays = 30;
+        var from = Anchor.AddDays(daysUntilWindow);
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
+        var member = await Host().RegisterMember(visits, validUntil);
+        var included = await Host().Lesson().Capacity(capacity).StartsAt(from).Pass(member.Number, visits, validUntil).Create();
+        await Host().Lesson().Capacity(capacity).StartsAt(from.AddHours(oneHour)).Cancelled().Pass(member.Number, visits, validUntil).Create();
+        await Host().Lesson().Capacity(capacity).StartsAt(from.AddHours(twoHours)).Pass(member.Number, visits, validUntil).Create();
 
         // Act
-        var response = await Host().User(107).Schedule(from, from.AddHours(2));
+        var response = await member.Schedule(from, from.AddHours(twoHours));
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -256,15 +320,23 @@ public class GetScheduleTests : ClubTest
     public async Task Get_FiltersByRoomAndReturnsEmptyForAnUnknownRoom()
     {
         // Arrange
-        var startsAt = Anchor.AddDays(7);
-        var rooms = await Host().Rooms(2);
-        var first = await Host().Lesson().Capacity(8).StartsAt(startsAt).Room(rooms[0].Id).Pass(108, 4).Create();
-        await Host().Lesson().Capacity(8).StartsAt(startsAt.AddHours(1)).Room(rooms[1].Id).Pass(108, 4).Create();
-        var user = Host().User(108);
+        var daysUntilClasses = 7;
+        var oneHour = 1;
+        var windowHours = 2;
+        var roomCount = 2;
+        var capacity = 8;
+        var visits = 4;
+        var passValidityDays = 30;
+        var startsAt = Anchor.AddDays(daysUntilClasses);
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
+        var rooms = await Host().Rooms(roomCount);
+        var member = await Host().RegisterMember(visits, validUntil);
+        var first = await Host().Lesson().Capacity(capacity).StartsAt(startsAt).Room(rooms[0].Id).Pass(member.Number, visits, validUntil).Create();
+        await Host().Lesson().Capacity(capacity).StartsAt(startsAt.AddHours(oneHour)).Room(rooms[1].Id).Pass(member.Number, visits, validUntil).Create();
 
         // Act
-        var filtered = await user.Schedule(startsAt, startsAt.AddHours(2), roomId: rooms[0].Id);
-        var unknown = await user.Schedule(startsAt, startsAt.AddHours(2), roomId: MissingRoomId);
+        var filtered = await member.Schedule(startsAt, startsAt.AddHours(windowHours), roomId: rooms[0].Id);
+        var unknown = await member.Schedule(startsAt, startsAt.AddHours(windowHours), roomId: MissingRoomId);
 
         // Assert
         filtered.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -284,14 +356,20 @@ public class GetScheduleTests : ClubTest
         // Arrange
         var seats = 4;
         var capacity = 10;
-        var startsAt = Anchor.AddDays(8);
-        var lesson = await Host().Lesson().Capacity(capacity).StartsAt(startsAt).Pass(109, 8).Create();
-        await Host().User(109).Book(lesson, seats);
-        var cancel = await Host().User(109).CancelEnrollment(await Host().ActiveEnrollmentId(lesson.UserId, lesson.ClassId));
+        var visits = 8;
+        var daysUntilClass = 8;
+        var windowHours = 1;
+        var passValidityDays = 30;
+        var startsAt = Anchor.AddDays(daysUntilClass);
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
+        var member = await Host().RegisterMember(visits, validUntil);
+        var lesson = await Host().Lesson().Capacity(capacity).StartsAt(startsAt).Pass(member.Number, visits, validUntil).Create();
+        await member.Book(lesson, seats);
+        var cancel = await member.CancelEnrollment(await Host().ActiveEnrollmentId(lesson.UserId, lesson.ClassId));
         cancel.EnsureSuccessStatusCode();
 
         // Act
-        var response = await Host().User(109).Schedule(startsAt, startsAt.AddHours(1));
+        var response = await member.Schedule(startsAt, startsAt.AddHours(windowHours));
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -305,10 +383,12 @@ public class GetScheduleTests : ClubTest
     public async Task Get_WithoutToken_ReturnsUnauthorized()
     {
         // Arrange
-        var from = Anchor.AddDays(9);
+        var daysUntilWindow = 9;
+        var windowHours = 1;
+        var from = Anchor.AddDays(daysUntilWindow);
 
         // Act
-        var response = await Host().Anonymous().Schedule(from, from.AddHours(1));
+        var response = await Host().Anonymous().Schedule(from, from.AddHours(windowHours));
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
@@ -318,10 +398,13 @@ public class GetScheduleTests : ClubTest
     public async Task Get_OnThe61stRequest_ReturnsTooManyRequests()
     {
         // Arrange
-        var user = Host().User(110);
+        var visits = 4;
+        var passValidityDays = 30;
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
+        var member = await Host().RegisterMember(visits, validUntil);
 
         // Act
-        var lastStatus = await user.Hammer(_ => user.Schedule());
+        var lastStatus = await member.Hammer(_ => member.Schedule());
 
         // Assert
         lastStatus.ShouldBe(HttpStatusCode.TooManyRequests);

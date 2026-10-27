@@ -4,17 +4,21 @@ namespace WebApi.Tests.Infrastructure;
 
 public sealed class LessonDraft
 {
+    private const int DefaultCapacity = 8;
+    private const int DefaultLeadDays = 30;
+
     private readonly Club _club;
     private readonly List<PassSetup> _passes = [];
     private readonly List<SeatSetup> _taken = [];
-    private int _capacity = 8;
-    private DateTime _startsAt = DateTime.UtcNow.AddDays(30);
+    private int _capacity = DefaultCapacity;
+    private DateTime _startsAt;
     private long? _roomId;
     private bool _cancelled;
 
     public LessonDraft(Club club)
     {
         _club = club;
+        _startsAt = club.Now.AddDays(DefaultLeadDays);
     }
 
     public LessonDraft Capacity(int capacity)
@@ -43,7 +47,8 @@ public sealed class LessonDraft
 
     public LessonDraft Pass(int userNumber, int visits, DateOnly? validUntil = null)
     {
-        _passes.Add(new PassSetup(userNumber, visits, validUntil ?? ClubTime.Today().AddDays(30)));
+        var passValidityDays = 30;
+        _passes.Add(new PassSetup(userNumber, visits, validUntil ?? _club.Today.AddDays(passValidityDays)));
         return this;
     }
 

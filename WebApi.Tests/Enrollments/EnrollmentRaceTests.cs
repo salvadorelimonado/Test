@@ -14,12 +14,14 @@ public class EnrollmentRaceTests : ClubTest
         // Arrange
         var seats = 1;
         var visits = 4;
-        var validUntil = ClubTime.Today().AddDays(25);
+        var passValidityDays = 25;
+        var leadDays = 16;
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
         var first = await Host().RegisterMember(visits, validUntil);
         var second = await Host().RegisterMember(visits, validUntil);
         var lesson = await Host().Lesson()
             .Capacity(seats)
-            .StartsAt(DateTime.UtcNow.AddDays(16))
+            .StartsAt(Host().Now.AddDays(leadDays))
             .Pass(first.Number, visits, validUntil)
             .Create();
         var firstKey = Guid.NewGuid().ToString("N");
@@ -27,8 +29,8 @@ public class EnrollmentRaceTests : ClubTest
 
         // Act
         var responses = await Task.WhenAll(
-            Host().User(first.Number).Enroll(lesson, seats, firstKey),
-            Host().User(second.Number).Enroll(lesson, seats, secondKey));
+            first.Enroll(lesson, seats, firstKey),
+            second.Enroll(lesson, seats, secondKey));
 
         // Assert
         var created = responses.Single(response => response.StatusCode == HttpStatusCode.Created);
@@ -46,11 +48,14 @@ public class EnrollmentRaceTests : ClubTest
         // Arrange
         var seats = 1;
         var visits = 1;
-        var validUntil = ClubTime.Today().AddDays(25);
+        var capacity = 4;
+        var passValidityDays = 25;
+        var leadDays = 17;
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
         var member = await Host().RegisterMember(visits, validUntil);
         var lesson = await Host().Lesson()
-            .Capacity(4)
-            .StartsAt(DateTime.UtcNow.AddDays(17))
+            .Capacity(capacity)
+            .StartsAt(Host().Now.AddDays(leadDays))
             .Pass(member.Number, visits, validUntil)
             .Create();
         var firstKey = Guid.NewGuid().ToString("N");
@@ -58,8 +63,8 @@ public class EnrollmentRaceTests : ClubTest
 
         // Act
         var responses = await Task.WhenAll(
-            Host().User(member.Number).Enroll(lesson, seats, firstKey),
-            Host().User(member.Number).Enroll(lesson, seats, secondKey));
+            member.Enroll(lesson, seats, firstKey),
+            member.Enroll(lesson, seats, secondKey));
 
         // Assert
         responses.Count(response => response.StatusCode == HttpStatusCode.Created).ShouldBe(1);
@@ -75,8 +80,11 @@ public class EnrollmentRaceTests : ClubTest
         // Arrange
         var seats = 1;
         var visits = 2;
-        var validUntil = ClubTime.Today().AddDays(25);
-        var startsAt = ClubTime.WholeSecond(DateTime.UtcNow.AddDays(18));
+        var passValidityDays = 25;
+        var leadDays = 18;
+        var hoursUntilNextClass = 1;
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
+        var startsAt = ClubTime.WholeSecond(Host().Now.AddDays(leadDays));
         var first = await Host().RegisterMember(visits, validUntil);
         var second = await Host().RegisterMember(visits, validUntil);
         var firstLesson = await Host().Lesson()
@@ -86,18 +94,18 @@ public class EnrollmentRaceTests : ClubTest
             .Create();
         var secondLesson = await Host().Lesson()
             .Capacity(seats)
-            .StartsAt(startsAt.AddHours(1))
+            .StartsAt(startsAt.AddHours(hoursUntilNextClass))
             .Pass(second.Number, visits, validUntil)
             .Create();
-        var firstBooking = await Host().User(first.Number).Book(firstLesson, seats);
-        var secondBooking = await Host().User(second.Number).Book(secondLesson, seats);
-        var firstWaiting = await Host().User(first.Number).Join(secondLesson, seats);
-        var secondWaiting = await Host().User(second.Number).Join(firstLesson, seats);
+        var firstBooking = await first.Book(firstLesson, seats);
+        var secondBooking = await second.Book(secondLesson, seats);
+        var firstWaiting = await first.Join(secondLesson, seats);
+        var secondWaiting = await second.Join(firstLesson, seats);
 
         // Act
         var responses = await Task.WhenAll(
-            Host().User(first.Number).CancelEnrollment(firstBooking.Id),
-            Host().User(second.Number).CancelEnrollment(secondBooking.Id));
+            first.CancelEnrollment(firstBooking.Id),
+            second.CancelEnrollment(secondBooking.Id));
 
         // Assert
         responses[0].StatusCode.ShouldBe(HttpStatusCode.OK);

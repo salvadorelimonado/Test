@@ -17,12 +17,21 @@ public class GetEnrollmentTests : ClubTest
         // Arrange
         var seats = 2;
         var visits = 10;
-        var startsAt = ClubTime.WholeSecond(DateTime.UtcNow.AddDays(2));
-        var lesson = await Host().Lesson().Capacity(8).StartsAt(startsAt).Pass(80, visits).Create();
-        var created = await Host().User(80).Book(lesson, seats);
+        var capacity = 8;
+        var leadDays = 2;
+        var passValidityDays = 30;
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
+        var startsAt = ClubTime.WholeSecond(Host().Now.AddDays(leadDays));
+        var member = await Host().RegisterMember(visits, validUntil);
+        var lesson = await Host().Lesson()
+            .Capacity(capacity)
+            .StartsAt(startsAt)
+            .Pass(member.Number, visits, validUntil)
+            .Create();
+        var created = await member.Book(lesson, seats);
 
         // Act
-        var response = await Host().User(80).GetEnrollment(created.Id);
+        var response = await member.GetEnrollment(created.Id);
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -48,13 +57,22 @@ public class GetEnrollmentTests : ClubTest
         // Arrange
         var seats = 2;
         var visits = 10;
-        var lesson = await Host().Lesson().Capacity(8).StartsAt(ClubTime.WholeSecond(DateTime.UtcNow.AddHours(3))).Pass(81, visits).Create();
-        var created = await Host().User(81).Book(lesson, seats);
-        var cancel = await Host().User(81).CancelEnrollment(created.Id);
+        var capacity = 8;
+        var leadHours = 3;
+        var passValidityDays = 30;
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
+        var member = await Host().RegisterMember(visits, validUntil);
+        var lesson = await Host().Lesson()
+            .Capacity(capacity)
+            .StartsAt(ClubTime.WholeSecond(Host().Now.AddHours(leadHours)))
+            .Pass(member.Number, visits, validUntil)
+            .Create();
+        var created = await member.Book(lesson, seats);
+        var cancel = await member.CancelEnrollment(created.Id);
         cancel.EnsureSuccessStatusCode();
 
         // Act
-        var response = await Host().User(81).GetEnrollment(created.Id);
+        var response = await member.GetEnrollment(created.Id);
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -70,12 +88,22 @@ public class GetEnrollmentTests : ClubTest
     {
         // Arrange
         var seats = 2;
-        var lesson = await Host().Lesson().Capacity(8).StartsAt(ClubTime.WholeSecond(DateTime.UtcNow.AddDays(2))).Pass(82, 10).Create();
-        var created = await Host().User(82).Book(lesson, seats);
+        var visits = 10;
+        var capacity = 8;
+        var leadDays = 2;
+        var passValidityDays = 30;
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
+        var member = await Host().RegisterMember(visits, validUntil);
+        var lesson = await Host().Lesson()
+            .Capacity(capacity)
+            .StartsAt(ClubTime.WholeSecond(Host().Now.AddDays(leadDays)))
+            .Pass(member.Number, visits, validUntil)
+            .Create();
+        var created = await member.Book(lesson, seats);
         await Host().CancelClass(lesson.ClassId);
 
         // Act
-        var response = await Host().User(82).GetEnrollment(created.Id);
+        var response = await member.GetEnrollment(created.Id);
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -88,8 +116,13 @@ public class GetEnrollmentTests : ClubTest
     [TestMethod]
     public async Task Get_WhenEnrollmentIsMissing_ReturnsNotFound()
     {
+        // Arrange
+        var visits = 10;
+        var passValidityDays = 30;
+        var member = await Host().RegisterMember(visits, ClubTime.Today().AddDays(passValidityDays));
+
         // Act
-        var response = await Host().User(83).GetEnrollment(MissingEnrollmentId);
+        var response = await member.GetEnrollment(MissingEnrollmentId);
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
@@ -99,11 +132,23 @@ public class GetEnrollmentTests : ClubTest
     public async Task Get_WhenEnrollmentBelongsToAnotherUser_ReturnsNotFound()
     {
         // Arrange
-        var lesson = await Host().Lesson().Capacity(8).StartsAt(ClubTime.WholeSecond(DateTime.UtcNow.AddDays(2))).Pass(84, 10).Create();
-        var created = await Host().User(84).Book(lesson, 1);
+        var seats = 1;
+        var visits = 10;
+        var capacity = 8;
+        var leadDays = 2;
+        var passValidityDays = 30;
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
+        var owner = await Host().RegisterMember(visits, validUntil);
+        var other = await Host().RegisterMember(visits, validUntil);
+        var lesson = await Host().Lesson()
+            .Capacity(capacity)
+            .StartsAt(ClubTime.WholeSecond(Host().Now.AddDays(leadDays)))
+            .Pass(owner.Number, visits, validUntil)
+            .Create();
+        var created = await owner.Book(lesson, seats);
 
         // Act
-        var response = await Host().User(85).GetEnrollment(created.Id);
+        var response = await other.GetEnrollment(created.Id);
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
@@ -113,8 +158,19 @@ public class GetEnrollmentTests : ClubTest
     public async Task Get_WithoutToken_ReturnsUnauthorized()
     {
         // Arrange
-        var lesson = await Host().Lesson().Capacity(8).StartsAt(ClubTime.WholeSecond(DateTime.UtcNow.AddDays(2))).Pass(86, 10).Create();
-        var created = await Host().User(86).Book(lesson, 1);
+        var seats = 1;
+        var visits = 10;
+        var capacity = 8;
+        var leadDays = 2;
+        var passValidityDays = 30;
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
+        var member = await Host().RegisterMember(visits, validUntil);
+        var lesson = await Host().Lesson()
+            .Capacity(capacity)
+            .StartsAt(ClubTime.WholeSecond(Host().Now.AddDays(leadDays)))
+            .Pass(member.Number, visits, validUntil)
+            .Create();
+        var created = await member.Book(lesson, seats);
 
         // Act
         var response = await Host().Anonymous().GetEnrollment(created.Id);
@@ -131,21 +187,36 @@ public class GetEnrollmentTests : ClubTest
         var waiterBookedSeats = 2;
         var waiterRequestedSeats = 1;
         var waiterVisits = 10;
-        var startsAt = ClubTime.WholeSecond(DateTime.UtcNow.AddHours(3));
-        var validUntil = ClubTime.Today().AddDays(30);
-        var waiterClass = await Host().Lesson().Capacity(8).StartsAt(startsAt).Pass(89, waiterVisits, validUntil).Create();
-        var waiterEnrollment = await Host().User(89).Book(waiterClass, waiterBookedSeats);
-        var ownerClass = await Host().Lesson().Capacity(8).StartsAt(startsAt).Pass(88, 6, validUntil).Create();
-        var ownerEnrollment = await Host().User(88).Book(ownerClass, ownerSeats);
-        await Host().AddWaiting(89, ownerClass.ClassId, waiterRequestedSeats, DateTime.UtcNow.AddMinutes(-5));
-        var cached = await Host().User(89).GetEnrollment(waiterEnrollment.Id);
+        var ownerVisits = 6;
+        var capacity = 8;
+        var leadHours = 3;
+        var queuedAgo = 5;
+        var passValidityDays = 30;
+        var startsAt = ClubTime.WholeSecond(Host().Now.AddHours(leadHours));
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
+        var waiter = await Host().RegisterMember(waiterVisits, validUntil);
+        var owner = await Host().RegisterMember(ownerVisits, validUntil);
+        var waiterClass = await Host().Lesson()
+            .Capacity(capacity)
+            .StartsAt(startsAt)
+            .Pass(waiter.Number, waiterVisits, validUntil)
+            .Create();
+        var waiterEnrollment = await waiter.Book(waiterClass, waiterBookedSeats);
+        var ownerClass = await Host().Lesson()
+            .Capacity(capacity)
+            .StartsAt(startsAt)
+            .Pass(owner.Number, ownerVisits, validUntil)
+            .Create();
+        var ownerEnrollment = await owner.Book(ownerClass, ownerSeats);
+        await Host().AddWaiting(waiter.Number, ownerClass.ClassId, waiterRequestedSeats, Host().Now.AddMinutes(-queuedAgo));
+        var cached = await waiter.GetEnrollment(waiterEnrollment.Id);
         cached.EnsureSuccessStatusCode();
         var cachedCard = await cached.ReadBody<EnrollmentCard>();
-        var cancel = await Host().User(88).CancelEnrollment(ownerEnrollment.Id);
+        var cancel = await owner.CancelEnrollment(ownerEnrollment.Id);
         cancel.EnsureSuccessStatusCode();
 
         // Act
-        var response = await Host().User(89).GetEnrollment(waiterEnrollment.Id);
+        var response = await waiter.GetEnrollment(waiterEnrollment.Id);
 
         // Assert
         cachedCard.Pass.RemainingVisits.ShouldBe(waiterVisits - waiterBookedSeats);
@@ -164,17 +235,30 @@ public class GetEnrollmentTests : ClubTest
         var waiterSeats = 1;
         var otherSeats = 1;
         var visits = 6;
-        var validUntil = ClubTime.Today().AddDays(30);
-        var startsAt = ClubTime.WholeSecond(DateTime.UtcNow.AddHours(5));
+        var capacity = 4;
+        var leadHours = 5;
+        var laterHours = 1;
+        var queuedAgo = 5;
+        var passValidityDays = 30;
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
+        var startsAt = ClubTime.WholeSecond(Host().Now.AddHours(leadHours));
         var waiter = await Host().RegisterMember(visits, validUntil);
         var owner = await Host().RegisterMember(visits, validUntil);
-        var otherClass = await Host().Lesson().Capacity(4).StartsAt(startsAt).Pass(waiter.Number, visits, validUntil).Create();
+        var otherClass = await Host().Lesson()
+            .Capacity(capacity)
+            .StartsAt(startsAt)
+            .Pass(waiter.Number, visits, validUntil)
+            .Create();
         var otherBooking = await waiter.Book(otherClass, otherSeats);
         var cached = await waiter.GetEnrollment(otherBooking.Id);
         cached.EnsureSuccessStatusCode();
-        var target = await Host().Lesson().Capacity(4).StartsAt(startsAt.AddHours(1)).Pass(owner.Number, visits, validUntil).Create();
+        var target = await Host().Lesson()
+            .Capacity(capacity)
+            .StartsAt(startsAt.AddHours(laterHours))
+            .Pass(owner.Number, visits, validUntil)
+            .Create();
         var ownerBooking = await owner.Book(target, bookedSeats);
-        await Host().AddWaiting(waiter.Number, target.ClassId, waiterSeats, DateTime.UtcNow.AddMinutes(-5));
+        await Host().AddWaiting(waiter.Number, target.ClassId, waiterSeats, Host().Now.AddMinutes(-queuedAgo));
 
         // Act
         var increased = await owner.ChangeSeats(ownerBooking.Id, increasedSeats);
@@ -191,10 +275,12 @@ public class GetEnrollmentTests : ClubTest
     public async Task Get_WhenTheIdIsNotNumeric_ReturnsBadRequest()
     {
         // Arrange
-        var user = Host().User(90);
+        var visits = 10;
+        var passValidityDays = 30;
+        var member = await Host().RegisterMember(visits, ClubTime.Today().AddDays(passValidityDays));
 
         // Act
-        var response = await user.GetEnrollment("abc");
+        var response = await member.GetEnrollment("abc");
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);

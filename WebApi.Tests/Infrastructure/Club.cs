@@ -27,10 +27,16 @@ public sealed class Club : IDisposable
 
     internal HttpClient Http { get; }
 
+    public DateTime Now => _factory.Clock.GetUtcNow().UtcDateTime;
+
+    public DateOnly Today => DateOnly.FromDateTime(Now);
+
     public static Club Open()
     {
         _sharedFactory ??= new ApiApplicationFactory();
-        return new Club(_sharedFactory);
+        var factory = _sharedFactory;
+        ClubTime.Use(() => factory.Clock.GetUtcNow().UtcDateTime);
+        return new Club(factory);
     }
 
     public static void Shutdown()
@@ -65,7 +71,7 @@ public sealed class Club : IDisposable
             Email = email,
             PasswordHash = PasswordHash,
             Role = "user",
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = Now
         };
         dbContext.Users.Add(user);
         await dbContext.SaveChangesAsync();
@@ -166,7 +172,7 @@ public sealed class Club : IDisposable
                 ClassId = scheduledClass.Id,
                 Seats = seat.Seats,
                 Status = EnrollmentStatus.Active,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = Now
             });
         }
 
@@ -297,7 +303,7 @@ public sealed class Club : IDisposable
             ClassId = classId,
             Seats = seats,
             Status = EnrollmentStatus.Active,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = Now
         };
         dbContext.Enrollments.Add(enrollment);
         await dbContext.SaveChangesAsync();
@@ -419,8 +425,8 @@ public sealed class Club : IDisposable
             ClassId = classId,
             Seats = seats,
             Status = status,
-            CreatedAt = DateTime.UtcNow,
-            CancelledAt = status == EnrollmentStatus.Cancelled ? DateTime.UtcNow : null
+            CreatedAt = Now,
+            CancelledAt = status == EnrollmentStatus.Cancelled ? Now : null
         };
         dbContext.Enrollments.Add(enrollment);
         await dbContext.SaveChangesAsync();
@@ -431,7 +437,7 @@ public sealed class Club : IDisposable
     {
         await using var scope = _factory.Services.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ClubDbContext>();
-        var createdAt = DateTime.UtcNow;
+        var createdAt = Now;
         var refundedVisits = 0;
         await dbContext.Database.ExecuteSqlAsync(
             $"""

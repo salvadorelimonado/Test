@@ -34,7 +34,8 @@ public class IdempotencyServiceTests : ClubTest
     {
         // Arrange
         var visits = 2;
-        var validUntil = ClubTime.Today().AddDays(20);
+        var passValidityDays = 20;
+        var validUntil = ClubTime.Today().AddDays(passValidityDays);
         var classId = 80L;
         var seats = 1;
         var otherSeats = 2;
